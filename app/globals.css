@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background: #000;
+  color: white;
+}
+
+/* =====================================================
+   MY PAY LIGHT MODE
+===================================================== */
+
+html.mypay-light body {
+  background: #f4f4f5;
+  color: #18181b;
+}
+
+/* Main page background */
+html.mypay-light .bg-black {
+  background-color: #f4f4f5 !important;
+}
+
+/* Dark cards become white */
+html.mypay-light .bg-zinc-900 {
+  background-color: #ffffff !important;
+}
+
+/* Dark inner boxes */
+html.mypay-light .bg-zinc-800 {
+  background-color: #f4f4f5 !important;
+}
+
+/* Profile/icon backgrounds */
+html.mypay-light .bg-zinc-700 {
+  background-color: #e4e4e7 !important;
+}
+
+/* Main white text becomes dark */
+html.mypay-light .text-white {
+  color: #18181b !important;
+}
+
+/* Gray text */
+html.mypay-light .text-zinc-400 {
+  color: #52525b !important;
+}
+
+html.mypay-light .text-zinc-500 {
+  color: #71717a !important;
+}
+
+/* Keep blue history link visible */
+html.mypay-light .text-blue-400 {
+  color: #2563eb !important;
+}
+
+/* Hover states */
+html.mypay-light .hover\:bg-zinc-800:hover {
+  background-color: #e4e4e7 !important;
+}
+
+html.mypay-light .hover\:bg-zinc-700:hover {
+  background-color: #e4e4e7 !important;
+}
+
+html.mypay-light .hover\:text-white:hover {
+  color: #18181b !important;
+}
+
+/* Inputs */
+html.mypay-light input {
+  background-color: #f4f4f5 !important;
+  color: #18181b !important;
+}
+
+html.mypay-light input::placeholder {
+  color: #71717a !important;
+}
+
+/* Settings modal */
+html.mypay-light .bg-black\/80 {
+  background-color: rgba(255, 255, 255, 0.75) !important;
+}
+
+/* Borders */
+html.mypay-light .border-zinc-800 {
+  border-color: #e4e4e7 !important;
+}
