@@ -33,7 +33,7 @@ export default function Login() {
         return;
       }
 
-      router.push("/");
+      window.location.href = "/";
     } catch (error) {
       console.error(error);
       alert("Something went wrong. Please try again.");
