@@ -22,10 +22,13 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
+
+      console.log("LOGIN RESULT:", data);
+      console.log("LOGIN ERROR:", error);
 
       if (error) {
         alert("Login failed: " + error.message);
@@ -33,9 +36,23 @@ export default function Login() {
         return;
       }
 
+      // Make sure Supabase actually created a session
+      if (!data.session) {
+        alert(
+          "Your login was accepted, but no session was created. Please try again."
+        );
+        setLoading(false);
+        return;
+      }
+
+      console.log("SESSION CREATED:", data.session.user.email);
+
+      // Give Supabase a moment to save the session
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
       window.location.href = "/";
     } catch (error) {
-      console.error(error);
+      console.error("LOGIN ERROR:", error);
       alert("Something went wrong. Please try again.");
       setLoading(false);
     }
