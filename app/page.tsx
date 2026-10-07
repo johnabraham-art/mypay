@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 
-type ActionType = "send" | "receive" | "request" | null;
+type ActionType =
+  | "send"
+  | "receive"
+  | "request"
+  | "withdraw"
+  | null;
+
 type ThemeType = "dark" | "light" | "system";
 
 type SuccessPanel =
@@ -12,7 +19,33 @@ type SuccessPanel =
       amount: number;
       email: string;
     }
+  | {
+      type: "withdrawal";
+      amount: number;
+      target: string;
+    }
   | null;
+
+type Transaction = {
+  id?: string;
+  amount?: number;
+  sender_id?: string;
+  recipient_id?: string;
+  sender_email?: string;
+  recipient_email?: string;
+  description?: string;
+  created_at?: string;
+  status?: string;
+};
+
+type MoneyRequest = {
+  id: string;
+  requester_email?: string;
+  requested_from_email?: string;
+  amount: number;
+  status?: string;
+  created_at?: string;
+};
 
 type DemoCard = {
   cardholderName: string;
@@ -21,9 +54,17 @@ type DemoCard = {
   expiry: string;
 };
 
+const formatUSDT = (value: number) =>
+  `${value.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} USDT`;
+
 export default function Home() {
+  const router = useRouter();
+
   // =========================
-  // BASIC WALLET STATE
+  // USER / WALLET
   // =========================
 
   const [balance, setBalance] = useState<number | null>(null);
@@ -31,18 +72,48 @@ export default function Home() {
 
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
+  const [currentUserId, setCurrentUserId] = useState("");
+
+  // =========================
+  // SEND
+  // =========================
 
   const [email, setEmail] = useState("");
   const [amount, setAmount] = useState("");
+  const [transferLoading, setTransferLoading] = useState(false);
+
+  // =========================
+  // REQUEST
+  // =========================
 
   const [requestEmail, setRequestEmail] = useState("");
   const [requestAmount, setRequestAmount] = useState("");
-
-  const [history, setHistory] = useState<any[]>([]);
-  const [currentUserId, setCurrentUserId] = useState("");
-
-  const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
   const [requestLoading, setRequestLoading] = useState(false);
+
+  // =========================
+  // WITHDRAW
+  // =========================
+
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawAddress, setWithdrawAddress] = useState("");
+  const [withdrawNetwork, setWithdrawNetwork] = useState("TRC20");
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
+
+  // =========================
+  // HISTORY
+  // =========================
+
+  const [history, setHistory] = useState<Transaction[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // =========================
+  // REQUESTS
+  // =========================
+
+  const [incomingRequests, setIncomingRequests] = useState<
+    MoneyRequest[]
+  >([]);
+
   const [respondingToRequest, setRespondingToRequest] =
     useState<string | null>(null);
 
@@ -54,14 +125,13 @@ export default function Home() {
     useState<ActionType>(null);
 
   const [showSettings, setShowSettings] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
   const [showCardPanel, setShowCardPanel] = useState(false);
 
   const [successPanel, setSuccessPanel] =
     useState<SuccessPanel>(null);
 
   // =========================
-  // BANK CARD STATE
+  // CARD
   // =========================
 
   const [bankCard, setBankCard] =
@@ -73,7 +143,7 @@ export default function Home() {
   const [cardSaving, setCardSaving] = useState(false);
 
   // =========================
-  // SETTINGS STATE
+  // SETTINGS
   // =========================
 
   const [appLock, setAppLock] = useState(false);
@@ -90,111 +160,81 @@ export default function Home() {
     useState(true);
 
   // =========================
-  // LOAD SAVED SETTINGS
+  // GET USER
   // =========================
 
-  useEffect(() => {
-    const savedTheme = localStorage.getItem(
-      "mypay-theme"
-    ) as ThemeType | null;
+  const getUser = async () => {
+    const { data, error } =
+      await supabase.auth.getUser();
 
-    if (savedTheme) {
-      setTheme(savedTheme);
+    if (error || !data.user) {
+      router.push("/login");
+      return null;
     }
 
-    const savedAppLock =
-      localStorage.getItem("mypay-app-lock");
+    const user = data.user;
 
-    const savedBiometric =
-      localStorage.getItem("mypay-biometric");
+    setCurrentUserId(user.id);
+    setUserEmail(user.email || "");
 
-    const savedRequireUnlock =
-      localStorage.getItem("mypay-require-unlock");
+    const name =
+      user.user_metadata?.name ||
+      user.user_metadata?.full_name ||
+      user.email?.split("@")[0] ||
+      "MyPay User";
 
-    const savedTransactionNotifications =
-      localStorage.getItem(
-        "mypay-transaction-notifications"
-      );
+    setUserName(name);
 
-    const savedMoneyRequestNotifications =
-      localStorage.getItem(
-        "mypay-money-request-notifications"
-      );
-
-    const savedCard =
-      localStorage.getItem("mypay-demo-card");
-
-    if (savedAppLock !== null) {
-      setAppLock(savedAppLock === "true");
-    }
-
-    if (savedBiometric !== null) {
-      setBiometric(savedBiometric === "true");
-    }
-
-    if (savedRequireUnlock !== null) {
-      setRequireUnlock(savedRequireUnlock === "true");
-    }
-
-    if (savedTransactionNotifications !== null) {
-      setTransactionNotifications(
-        savedTransactionNotifications === "true"
-      );
-    }
-
-    if (savedMoneyRequestNotifications !== null) {
-      setMoneyRequestNotifications(
-        savedMoneyRequestNotifications === "true"
-      );
-    }
-
-    if (savedCard) {
-      try {
-        setBankCard(JSON.parse(savedCard));
-      } catch {
-        localStorage.removeItem("mypay-demo-card");
-      }
-    }
-  }, []);
+    return user;
+  };
 
   // =========================
-  // APPLY INITIAL THEME
+  // LOAD WALLET
   // =========================
 
-  useEffect(() => {
-    if (theme === "light") {
-      document.documentElement.classList.add(
-        "mypay-light"
-      );
-    } else if (theme === "dark") {
-      document.documentElement.classList.remove(
-        "mypay-light"
-      );
-    } else {
-      const prefersLight =
-        window.matchMedia(
-          "(prefers-color-scheme: light)"
-        ).matches;
+  const loadWallet = async (userId: string) => {
+    const { data, error } = await supabase
+      .from("wallets")
+      .select("balance")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-      if (prefersLight) {
-        document.documentElement.classList.add(
-          "mypay-light"
+    if (error) {
+      console.warn("Wallet could not be loaded:", error.message);
+      return;
+    }
+
+    if (!data) {
+      const { data: newWallet, error: createError } =
+        await supabase
+          .from("wallets")
+          .insert({
+            user_id: userId,
+            balance: 0,
+          })
+          .select("balance")
+          .single();
+
+      if (createError) {
+        console.warn(
+          "Wallet could not be created:",
+          createError.message
         );
-      } else {
-        document.documentElement.classList.remove(
-          "mypay-light"
-        );
+        return;
       }
+
+      setBalance(Number(newWallet?.balance || 0));
+      return;
     }
-  }, [theme]);
+
+    setBalance(Number(data.balance || 0));
+  };
 
   // =========================
-  // LOAD TRANSACTION HISTORY
+  // LOAD HISTORY
   // =========================
 
   const loadHistory = async (userId: string) => {
-    if (!userId) return;
-
     const { data, error } = await supabase
       .from("transactions")
       .select("*")
@@ -203,10 +243,14 @@ export default function Home() {
       )
       .order("created_at", {
         ascending: false,
-      });
+      })
+      .limit(50);
 
     if (error) {
-      console.log("HISTORY ERROR:", error.message);
+      console.warn(
+        "Transaction history could not be loaded:",
+        error.message
+      );
       return;
     }
 
@@ -214,216 +258,314 @@ export default function Home() {
   };
 
   // =========================
-  // LOAD INCOMING REQUESTS
+  // LOAD REQUESTS
   // =========================
 
-  const loadIncomingRequests = async (
-    userId: string
+  const loadRequests = async (
+    userEmailValue: string
   ) => {
-    if (!userId) return;
+    if (!userEmailValue) {
+      setIncomingRequests([]);
+      return;
+    }
 
     const { data, error } = await supabase
       .from("money_requests")
       .select("*")
-      .eq("requested_from_id", userId)
+      .eq(
+        "requested_from_email",
+        userEmailValue
+      )
       .eq("status", "pending")
       .order("created_at", {
         ascending: false,
       });
 
     if (error) {
-      console.log("REQUEST ERROR:", error.message);
+      /*
+        IMPORTANT:
+        Use console.warn instead of console.error.
+        Next.js development mode can show console.error
+        as the large red error overlay.
+      */
+
+      console.warn(
+        "Money requests could not be loaded:",
+        error.message,
+        error.details,
+        error.hint,
+        error.code
+      );
+
+      setIncomingRequests([]);
       return;
     }
 
-    setIncomingRequests(data || []);
+    setIncomingRequests(
+      (data || []) as MoneyRequest[]
+    );
   };
 
   // =========================
-  // START APP
+  // INITIALIZE USER
   // =========================
 
   useEffect(() => {
-    const startApp = async () => {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+    const initialize = async () => {
+      const user = await getUser();
 
-      if (userError || !user) {
-        console.log(
-          "USER ERROR:",
-          userError?.message
-        );
-        return;
-      }
+      if (!user) return;
 
-      setCurrentUserId(user.id);
-
-      setUserName(
-        user.user_metadata?.name || "MyPay User"
-      );
-
-      setUserEmail(user.email || "");
-
+      await loadWallet(user.id);
       await loadHistory(user.id);
-      await loadIncomingRequests(user.id);
 
-      // =========================
-      // LOAD WALLET
-      // =========================
-
-      const {
-        data: wallet,
-        error: walletError,
-      } = await supabase
-        .from("wallets")
-        .select("balance")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (walletError) {
-        console.log(
-          "WALLET ERROR:",
-          walletError.message
-        );
-        return;
+      if (user.email) {
+        await loadRequests(user.email);
       }
-
-      // =========================
-      // CREATE WALLET IF NEEDED
-      // =========================
-
-      if (!wallet) {
-        const {
-          data: newWallet,
-          error: createError,
-        } = await supabase
-          .from("wallets")
-          .insert({
-            user_id: user.id,
-            balance: 125050,
-          })
-          .select("balance")
-          .single();
-
-        if (createError) {
-          console.log(
-            "CREATE WALLET ERROR:",
-            createError.message
-          );
-          return;
-        }
-
-        setBalance(Number(newWallet.balance));
-        return;
-      }
-
-      setBalance(Number(wallet.balance));
     };
 
-    startApp();
+    initialize();
   }, []);
 
   // =========================
-  // SEND MONEY
+  // LOAD SAVED SETTINGS
+  // =========================
+
+  useEffect(() => {
+    const savedTheme =
+      localStorage.getItem("mypay-theme");
+
+    if (
+      savedTheme === "dark" ||
+      savedTheme === "light" ||
+      savedTheme === "system"
+    ) {
+      setTheme(savedTheme);
+    }
+
+    setAppLock(
+      localStorage.getItem("mypay-app-lock") ===
+        "true"
+    );
+
+    setBiometric(
+      localStorage.getItem("mypay-biometric") ===
+        "true"
+    );
+
+    const savedTransactionNotifications =
+      localStorage.getItem(
+        "mypay-transaction-notifications"
+      );
+
+    if (
+      savedTransactionNotifications !== null
+    ) {
+      setTransactionNotifications(
+        savedTransactionNotifications === "true"
+      );
+    }
+
+    const savedRequestNotifications =
+      localStorage.getItem(
+        "mypay-request-notifications"
+      );
+
+    if (
+      savedRequestNotifications !== null
+    ) {
+      setMoneyRequestNotifications(
+        savedRequestNotifications === "true"
+      );
+    }
+
+    const savedCard =
+      localStorage.getItem("mypay-card");
+
+    if (savedCard) {
+      try {
+        setBankCard(JSON.parse(savedCard));
+      } catch {
+        localStorage.removeItem("mypay-card");
+      }
+    }
+  }, []);
+
+  // =========================
+  // SAVE SETTINGS
+  // =========================
+
+  useEffect(() => {
+    localStorage.setItem("mypay-theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "mypay-app-lock",
+      String(appLock)
+    );
+  }, [appLock]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "mypay-biometric",
+      String(biometric)
+    );
+  }, [biometric]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "mypay-transaction-notifications",
+      String(transactionNotifications)
+    );
+  }, [transactionNotifications]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "mypay-request-notifications",
+      String(moneyRequestNotifications)
+    );
+  }, [moneyRequestNotifications]);
+
+  // =========================
+  // SEND USDT
   // =========================
 
   const handleTransfer = async () => {
-    if (balance === null) {
-      alert("Wallet is still loading");
+    if (!email.trim() || !amount.trim()) {
+      alert(
+        "Please enter the recipient email and USDT amount."
+      );
       return;
     }
 
     const transferAmount = Number(amount);
 
-    if (!email || !amount) {
-      alert("Fill all fields");
+    if (
+      !Number.isFinite(transferAmount) ||
+      transferAmount <= 0
+    ) {
+      alert("Enter a valid USDT amount.");
       return;
     }
 
-    if (transferAmount <= 0) {
-      alert("Enter a valid amount");
+    if (balance === null) {
+      alert("Wallet is still loading.");
       return;
     }
 
     if (transferAmount > balance) {
-      alert("Insufficient funds");
+      alert("Insufficient USDT balance.");
       return;
     }
+
+    setTransferLoading(true);
 
     const { error } = await supabase.rpc(
       "send_demo_money",
       {
-        recipient_email: email,
+        recipient_email: email.trim(),
         transfer_amount: transferAmount,
       }
     );
 
     if (error) {
-      alert(
-        "Transfer failed: " + error.message
+      setTransferLoading(false);
+
+      console.warn(
+        "Transfer failed:",
+        error.message
       );
+
+      alert(
+        "Transfer failed: " +
+          error.message
+      );
+
       return;
     }
 
-    setBalance(balance - transferAmount);
+    const recipient = email.trim();
 
-    if (currentUserId) {
-      await loadHistory(currentUserId);
-    }
-
-    const recipient = email;
+    setBalance(
+      balance - transferAmount
+    );
 
     setEmail("");
     setAmount("");
     setActiveAction(null);
+    setTransferLoading(false);
 
     setSuccessPanel({
       type: "transaction",
       amount: transferAmount,
       email: recipient,
     });
+
+    if (currentUserId) {
+      await loadHistory(currentUserId);
+    }
   };
 
   // =========================
-  // REQUEST MONEY
+  // REQUEST USDT
   // =========================
 
   const handleRequestMoney = async () => {
-    const requestAmountNumber =
-      Number(requestAmount);
-
-    if (!requestEmail || !requestAmount) {
-      alert("Fill all fields");
+    if (
+      !requestEmail.trim() ||
+      !requestAmount.trim()
+    ) {
+      alert(
+        "Please enter the email and USDT amount."
+      );
       return;
     }
 
-    if (requestAmountNumber <= 0) {
-      alert("Enter a valid amount");
+    const requestAmountNumber =
+      Number(requestAmount);
+
+    if (
+      !Number.isFinite(
+        requestAmountNumber
+      ) ||
+      requestAmountNumber <= 0
+    ) {
+      alert("Enter a valid USDT amount.");
       return;
     }
 
     setRequestLoading(true);
 
-    const { error } = await supabase.rpc(
-      "create_money_request",
-      {
-        p_requested_from_email: requestEmail,
-        p_amount: requestAmountNumber,
-      }
-    );
+    const { error } =
+      await supabase.rpc(
+        "create_money_request",
+        {
+          p_requested_from_email:
+            requestEmail.trim(),
+          p_amount:
+            requestAmountNumber,
+        }
+      );
 
     setRequestLoading(false);
 
     if (error) {
-      alert(
-        "Request failed: " + error.message
+      console.warn(
+        "Request failed:",
+        error.message
       );
+
+      alert(
+        "Request failed: " +
+          error.message
+      );
+
       return;
     }
 
-    const requestedEmail = requestEmail;
+    const requestedEmail =
+      requestEmail.trim();
 
     setRequestEmail("");
     setRequestAmount("");
@@ -437,7 +579,7 @@ export default function Home() {
   };
 
   // =========================
-  // ACCEPT / DECLINE REQUEST
+  // RESPOND TO REQUEST
   // =========================
 
   const handleRequestResponse = async (
@@ -446,146 +588,220 @@ export default function Home() {
   ) => {
     setRespondingToRequest(requestId);
 
-    const { data, error } = await supabase.rpc(
-      "respond_to_money_request",
-      {
-        p_request_id: requestId,
-        p_decision: decision,
-      }
-    );
+    const { error } =
+      await supabase.rpc(
+        "respond_to_money_request",
+        {
+          p_request_id: requestId,
+          p_decision: decision,
+        }
+      );
 
     setRespondingToRequest(null);
 
     if (error) {
+      console.warn(
+        "Request response failed:",
+        error.message
+      );
+
       alert(
-        `${
-          decision === "accepted"
-            ? "Accept"
-            : "Decline"
-        } failed: ${error.message}`
+        "Unable to update request: " +
+          error.message
       );
 
       return;
-    }
-
-    if (decision === "accepted") {
-      alert(
-        "Money request accepted. The money has been transferred."
-      );
-    } else {
-      alert("Money request declined.");
     }
 
     if (currentUserId) {
-      await loadIncomingRequests(
-        currentUserId
-      );
-
+      await loadWallet(currentUserId);
       await loadHistory(currentUserId);
     }
 
-    if (
-      decision === "accepted" &&
-      currentUserId
-    ) {
-      const { data: wallet } =
-        await supabase
-          .from("wallets")
-          .select("balance")
-          .eq("user_id", currentUserId)
-          .maybeSingle();
-
-      if (wallet) {
-        setBalance(Number(wallet.balance));
-      }
+    if (userEmail) {
+      await loadRequests(userEmail);
     }
-
-    console.log(
-      "REQUEST RESPONSE:",
-      data
-    );
   };
 
-  // ==================================================
-  // BANK CARD FUNCTIONS
-  // ==================================================
+  // =========================
+  // WITHDRAW USDT
+  // =========================
 
-  const detectCardBrand = (number: string) => {
-    const cleanNumber =
-      number.replace(/\D/g, "");
-
-    if (/^4/.test(cleanNumber)) {
-      return "Visa";
-    }
-
-    if (
-      /^(5[1-5]|2[2-7])/.test(cleanNumber)
-    ) {
-      return "Mastercard";
-    }
-
-    if (/^3[47]/.test(cleanNumber)) {
-      return "American Express";
-    }
-
-    if (/^6(?:011|5)/.test(cleanNumber)) {
-      return "Discover";
-    }
-
-    return "Bank Card";
-  };
-
-  const formatCardNumber = (
-    value: string
-  ) => {
-    const clean = value
-      .replace(/\D/g, "")
-      .slice(0, 19);
-
-    return clean
-      .replace(/(.{4})/g, "$1 ")
-      .trim();
-  };
-
-  const formatExpiry = (
-    value: string
-  ) => {
-    const clean = value
-      .replace(/\D/g, "")
-      .slice(0, 4);
-
-    if (clean.length <= 2) {
-      return clean;
-    }
-
-    return `${clean.slice(
-      0,
-      2
-    )}/${clean.slice(2)}`;
-  };
-
-  const saveBankCard = () => {
-    const cleanNumber =
-      cardNumber.replace(/\D/g, "");
-
-    if (!cardholderName.trim()) {
-      alert("Enter the cardholder name.");
+  const handleWithdraw = async () => {
+    if (balance === null) {
+      alert("Wallet is still loading.");
       return;
     }
 
     if (
-      cleanNumber.length < 12 ||
-      cleanNumber.length > 19
+      !withdrawAmount.trim() ||
+      !withdrawAddress.trim() ||
+      !withdrawNetwork.trim()
     ) {
       alert(
-        "Enter a valid demo card number."
+        "Please fill in all USDT withdrawal fields."
       );
       return;
     }
 
-    if (!/^\d{2}\/\d{2}$/.test(expiry)) {
+    const withdrawalValue =
+      Number(withdrawAmount);
+
+    if (
+      !Number.isFinite(
+        withdrawalValue
+      ) ||
+      withdrawalValue <= 0
+    ) {
+      alert("Enter a valid USDT amount.");
+      return;
+    }
+
+    if (withdrawalValue > balance) {
+      alert("Insufficient USDT balance.");
+      return;
+    }
+
+    if (!currentUserId) {
+      alert("User account not found.");
+      return;
+    }
+
+    setWithdrawLoading(true);
+
+    /*
+      DEMO ONLY.
+
+      This does NOT send real cryptocurrency.
+      It only changes the demo wallet balance.
+    */
+
+    const handleWithdraw = async () => {
+  if (balance === null) {
+    alert("Wallet is still loading.");
+    return;
+  }
+
+  const withdrawalValue = Number(withdrawAmount);
+
+  if (
+    !withdrawAmount.trim() ||
+    !withdrawAddress.trim() ||
+    !withdrawNetwork.trim()
+  ) {
+    alert("Please fill in all USDT withdrawal fields.");
+    return;
+  }
+
+  if (
+    !Number.isFinite(withdrawalValue) ||
+    withdrawalValue <= 0
+  ) {
+    alert("Enter a valid USDT amount.");
+    return;
+  }
+
+  if (withdrawalValue > balance) {
+    alert("Insufficient USDT balance.");
+    return;
+  }
+
+  if (!currentUserId) {
+    alert("User account not found.");
+    return;
+  }
+
+  setWithdrawLoading(true);
+
+  // DEMO ONLY.
+  // This does NOT send real USDT.
+
+  const address = withdrawAddress.trim();
+
+  const shortAddress =
+    address.length > 12
+      ? `${address.slice(0, 6)}••••${address.slice(-6)}`
+      : address;
+
+  const target =
+    `${withdrawNetwork} • ${shortAddress}`;
+
+  // Keep the money in the wallet for now.
+  // The withdrawal is only marked as PENDING.
+  setWithdrawAmount("");
+  setWithdrawAddress("");
+  setWithdrawNetwork("TRC20");
+
+  setWithdrawLoading(false);
+  setActiveAction(null);
+
+  setSuccessPanel({
+    type: "withdrawal",
+    amount: withdrawalValue,
+    target,
+  });
+
+  alert(
+    `Withdrawal request submitted!\n\n` +
+    `${withdrawalValue} USDT\n` +
+    `Status: PENDING`
+  );
+
+  await loadHistory(currentUserId);
+};
+
+    const address =
+      withdrawAddress.trim();
+
+    const shortAddress =
+      address.length > 12
+        ? `${address.slice(
+            0,
+            6
+          )}••••${address.slice(-6)}`
+        : address;
+
+    const target =
+      `${withdrawNetwork} • ${shortAddress}`;
+
+    setWithdrawAmount("");
+    setWithdrawAddress("");
+    setWithdrawNetwork("TRC20");
+
+    setWithdrawLoading(false);
+    setActiveAction(null);
+
+    setSuccessPanel({
+      type: "withdrawal",
+      amount: withdrawalValue,
+      target,
+    });
+
+    await loadHistory(currentUserId);
+  };
+
+  // =========================
+  // SAVE CARD
+  // =========================
+
+  const handleSaveCard = () => {
+    if (
+      !cardholderName.trim() ||
+      !cardNumber.trim() ||
+      !expiry.trim()
+    ) {
       alert(
-        "Enter the expiry date as MM/YY."
+        "Please fill in all card fields."
+      );
+      return;
+    }
+
+    const cleanCardNumber =
+      cardNumber.replace(/\s/g, "");
+
+    if (cleanCardNumber.length < 4) {
+      alert(
+        "Enter a valid card number."
       );
       return;
     }
@@ -595,41 +811,44 @@ export default function Home() {
     const newCard: DemoCard = {
       cardholderName:
         cardholderName.trim(),
-      last4: cleanNumber.slice(-4),
-      brand: detectCardBrand(cleanNumber),
-      expiry,
+      last4:
+        cleanCardNumber.slice(-4),
+      brand:
+        detectCardBrand(
+          cleanCardNumber
+        ),
+      expiry:
+        expiry.trim(),
     };
 
-    // Only safe demo metadata is stored.
-    // The full card number is NOT stored.
-    // CVV is NOT collected.
-
     localStorage.setItem(
-      "mypay-demo-card",
+      "mypay-card",
       JSON.stringify(newCard)
     );
 
     setBankCard(newCard);
-
     setCardNumber("");
-    setCardholderName("");
     setExpiry("");
-
     setCardSaving(false);
-    setShowCardPanel(false);
 
     alert(
-      "Demo bank card added successfully."
+      "Demo card saved successfully."
     );
   };
 
-  const removeBankCard = () => {
+  // =========================
+  // REMOVE CARD
+  // =========================
+
+  const handleRemoveCard = () => {
     localStorage.removeItem(
-      "mypay-demo-card"
+      "mypay-card"
     );
 
     setBankCard(null);
-    setShowCardPanel(false);
+    setCardholderName("");
+    setCardNumber("");
+    setExpiry("");
   };
 
   // =========================
@@ -638,497 +857,376 @@ export default function Home() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    window.location.href = "/login";
+    router.push("/login");
   };
 
   // =========================
-  // SETTINGS FUNCTIONS
+  // THEME
   // =========================
 
-  const changeTheme = (
-    newTheme: ThemeType
-  ) => {
-    setTheme(newTheme);
+  const isLight =
+    theme === "light";
 
-    localStorage.setItem(
-      "mypay-theme",
-      newTheme
-    );
+  const pageClass =
+    isLight
+      ? "bg-zinc-100 text-zinc-950"
+      : "bg-black text-white";
 
-    if (newTheme === "light") {
-      document.documentElement.classList.add(
-        "mypay-light"
-      );
-    } else if (newTheme === "dark") {
-      document.documentElement.classList.remove(
-        "mypay-light"
-      );
-    } else {
-      const prefersLight =
-        window.matchMedia(
-          "(prefers-color-scheme: light)"
-        ).matches;
+  const cardClass =
+    isLight
+      ? "bg-white border border-zinc-200"
+      : "bg-zinc-900 border border-zinc-800";
 
-      if (prefersLight) {
-        document.documentElement.classList.add(
-          "mypay-light"
-        );
-      } else {
-        document.documentElement.classList.remove(
-          "mypay-light"
-        );
-      }
-    }
-  };
-
-  const toggleAppLock = () => {
-    const newValue = !appLock;
-
-    setAppLock(newValue);
-
-    localStorage.setItem(
-      "mypay-app-lock",
-      String(newValue)
-    );
-  };
-
-  const toggleBiometric = async () => {
-    if (!window.PublicKeyCredential) {
-      alert(
-        "Biometric authentication is not supported by this browser."
-      );
-      return;
-    }
-
-    const newValue = !biometric;
-
-    setBiometric(newValue);
-
-    localStorage.setItem(
-      "mypay-biometric",
-      String(newValue)
-    );
-
-    if (newValue) {
-      alert(
-        "Biometric support is enabled in your MyPay settings. Actual fingerprint authentication will be connected using WebAuthn."
-      );
-    }
-  };
-
-  const toggleRequireUnlock = () => {
-    const newValue = !requireUnlock;
-
-    setRequireUnlock(newValue);
-
-    localStorage.setItem(
-      "mypay-require-unlock",
-      String(newValue)
-    );
-  };
-
-  const toggleTransactionNotifications =
-    () => {
-      const newValue =
-        !transactionNotifications;
-
-      setTransactionNotifications(
-        newValue
-      );
-
-      localStorage.setItem(
-        "mypay-transaction-notifications",
-        String(newValue)
-      );
-    };
-
-  const toggleMoneyRequestNotifications =
-    () => {
-      const newValue =
-        !moneyRequestNotifications;
-
-      setMoneyRequestNotifications(
-        newValue
-      );
-
-      localStorage.setItem(
-        "mypay-money-request-notifications",
-        String(newValue)
-      );
-    };
-
-  // =========================
-  // PAGE
-  // =========================
+  const inputClass =
+    isLight
+      ? "bg-zinc-100 text-zinc-950 border border-zinc-200"
+      : "bg-zinc-800 text-white";
 
   return (
-    <main className="min-h-screen bg-black text-white p-6">
-      <div className="max-w-sm mx-auto">
+    <main
+      className={`min-h-screen transition-colors ${pageClass}`}
+    >
+      {/* HEADER */}
 
-        {/* HEADER */}
-
-        <div className="flex items-center justify-between mb-6">
+      <header
+        className={`border-b ${
+          isLight
+            ? "border-zinc-200"
+            : "border-zinc-800"
+        }`}
+      >
+        <div className="max-w-5xl mx-auto px-5 py-5 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">
+            <h1 className="text-2xl font-bold">
               MY PAY
             </h1>
 
-            <p className="text-zinc-500 text-sm mt-1">
-              Your wallet dashboard
+            <p className="text-sm text-zinc-500">
+              Your USDT digital wallet
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() =>
-                setShowSettings(true)
+                setShowCardPanel(true)
               }
-              className="w-11 h-11 rounded-full bg-zinc-900 flex items-center justify-center text-xl hover:bg-zinc-800 transition"
-              aria-label="Open settings"
+              className={`w-11 h-11 rounded-full flex items-center justify-center ${
+                isLight
+                  ? "bg-zinc-200 hover:bg-zinc-300"
+                  : "bg-zinc-900 hover:bg-zinc-800"
+              }`}
             >
-              ⚙️
+              💳
             </button>
-
-            <div className="w-11 h-11 rounded-full bg-zinc-700 flex items-center justify-center text-xl">
-              👤
-            </div>
-          </div>
-        </div>
-
-        {/* PROFILE */}
-
-        <div className="bg-zinc-900 rounded-3xl p-5 mb-6">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-zinc-700 flex items-center justify-center text-2xl">
-              👤
-            </div>
-
-            <div>
-              <p className="text-lg font-semibold">
-                {userName || "MyPay User"}
-              </p>
-
-              <p className="text-zinc-500 text-sm">
-                {userEmail ||
-                  "No email available"}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* WALLET BALANCE */}
-
-        <div className="bg-zinc-900 rounded-3xl p-6 mb-6">
-          <div className="flex items-center justify-between">
-            <p className="text-zinc-400 text-sm">
-              Wallet Balance
-            </p>
 
             <button
               onClick={() =>
-                setShowBalance(!showBalance)
+                setShowSettings(true)
               }
-              className="text-zinc-400 hover:text-white text-xl"
+              className={`w-11 h-11 rounded-full flex items-center justify-center ${
+                isLight
+                  ? "bg-zinc-200 hover:bg-zinc-300"
+                  : "bg-zinc-900 hover:bg-zinc-800"
+              }`}
             >
-              {showBalance ? "👁️" : "🙈"}
+              ⚙️
             </button>
           </div>
+        </div>
+      </header>
 
-          <h2 className="text-4xl font-bold mt-2">
-            {balance === null
-              ? "Loading..."
-              : showBalance
-              ? `$${balance.toLocaleString()}`
-              : "••••••"}
+      <div className="max-w-5xl mx-auto px-5 py-8">
+
+        {/* WELCOME */}
+
+        <div className="mb-7">
+          <p className="text-sm text-zinc-500">
+            Welcome back
+          </p>
+
+          <h2 className="text-3xl font-bold mt-1">
+            {userName || "MyPay User"}
           </h2>
 
-          <button
-            onClick={() =>
-              setShowHistory(true)
-            }
-            className="text-blue-400 text-sm mt-4 hover:underline"
-          >
-            Transaction History →
-          </button>
+          {userEmail && (
+            <p className="text-sm text-zinc-500 mt-1">
+              {userEmail}
+            </p>
+          )}
         </div>
 
-        {/* =========================
-            SMALL BANK CARD SECTION
-        ========================= */}
+        {/* BALANCE */}
 
-        <button
-          onClick={() =>
-            setShowCardPanel(true)
-          }
-          className="w-full bg-zinc-900 rounded-2xl p-4 mb-5 text-left hover:bg-zinc-800 transition"
+        <section
+          className={`rounded-3xl p-7 mb-6 ${cardClass}`}
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-zinc-800 flex items-center justify-center">
-                💳
-              </div>
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-zinc-500 text-sm">
+                AVAILABLE USDT BALANCE
+              </p>
 
-              <div>
-                <p className="text-zinc-400 text-xs">
-                  Bank Card
-                </p>
+              <div className="flex items-center gap-3 mt-3">
+                <h2 className="text-4xl font-bold">
+                  {balance === null
+                    ? "Loading..."
+                    : showBalance
+                    ? formatUSDT(balance)
+                    : "•••••• USDT"}
+                </h2>
 
-                <p className="font-semibold text-sm mt-1">
-                  {bankCard
-                    ? `${bankCard.brand} •••• ${bankCard.last4}`
-                    : "No card connected"}
-                </p>
+                <button
+                  onClick={() =>
+                    setShowBalance(
+                      !showBalance
+                    )
+                  }
+                  className="text-zinc-500"
+                >
+                  {showBalance
+                    ? "👁️"
+                    : "🙈"}
+                </button>
               </div>
             </div>
 
-            <span className="text-zinc-400 text-lg">
-              →
-            </span>
+            <div className="text-right">
+              <p className="text-xs text-zinc-500">
+                MY PAY
+              </p>
+
+              <p className="text-sm font-semibold mt-1">
+                USDT Wallet
+              </p>
+            </div>
           </div>
-        </button>
+        </section>
 
-        {/* ACTION BUTTONS */}
+        {/* ACTIONS */}
 
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <button
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+          <ActionButton
+            icon="↗️"
+            title="Send USDT"
             onClick={() =>
-              setActiveAction(
-                activeAction === "send"
-                  ? null
-                  : "send"
-              )
+              setActiveAction("send")
             }
-            className="bg-zinc-900 rounded-3xl p-5 text-left hover:bg-zinc-800 transition"
-          >
-            <div className="text-2xl mb-3">
-              📤
-            </div>
+          />
 
-            <p className="font-semibold">
-              Send Money
-            </p>
-
-            <p className="text-zinc-500 text-sm mt-1">
-              Send money to another user
-            </p>
-          </button>
-
-          <button
+          <ActionButton
+            icon="↙️"
+            title="Receive"
             onClick={() =>
-              setActiveAction(
-                activeAction === "receive"
-                  ? null
-                  : "receive"
-              )
+              setActiveAction("receive")
             }
-            className="bg-zinc-900 rounded-3xl p-5 text-left hover:bg-zinc-800 transition"
-          >
-            <div className="text-2xl mb-3">
-              📥
-            </div>
+          />
 
-            <p className="font-semibold">
-              Receive Money
-            </p>
-
-            <p className="text-zinc-500 text-sm mt-1">
-              Receive money from another user
-            </p>
-          </button>
-
-          <button
+          <ActionButton
+            icon="💬"
+            title="Request USDT"
             onClick={() =>
-              setActiveAction(
-                activeAction === "request"
-                  ? null
-                  : "request"
-              )
+              setActiveAction("request")
             }
-            className="bg-zinc-900 rounded-3xl p-5 text-left hover:bg-zinc-800 transition"
-          >
-            <div className="text-2xl mb-3">
-              📨
-            </div>
+          />
 
-            <p className="font-semibold">
-              Request Money
-            </p>
-
-            <p className="text-zinc-500 text-sm mt-1">
-              Ask another user for money
-            </p>
-          </button>
-        </div>
+          <ActionButton
+            icon="🏦"
+            title="Withdraw USDT"
+            onClick={() =>
+              setActiveAction("withdraw")
+            }
+          />
+        </section>
 
         {/* INCOMING REQUESTS */}
 
         {incomingRequests.length > 0 && (
-          <div className="bg-zinc-900 rounded-3xl p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold">
-                Money Requests
-              </h3>
+          <section
+            className={`rounded-3xl p-6 mb-6 ${cardClass}`}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h3 className="text-xl font-bold">
+                  USDT Requests
+                </h3>
 
-              <span className="bg-yellow-500 text-black text-xs font-bold px-2 py-1 rounded-full">
-                {incomingRequests.length}
+                <p className="text-sm text-zinc-500 mt-1">
+                  People requesting USDT
+                  from you
+                </p>
+              </div>
+
+              <span className="bg-yellow-500/10 text-yellow-500 px-3 py-1 rounded-full text-xs font-semibold">
+                {incomingRequests.length} pending
               </span>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               {incomingRequests.map(
                 (request) => (
                   <div
                     key={request.id}
-                    className="bg-zinc-800 rounded-2xl p-4"
+                    className={`rounded-2xl p-4 ${
+                      isLight
+                        ? "bg-zinc-100"
+                        : "bg-zinc-800"
+                    }`}
                   >
-                    <p className="font-semibold">
-                      Money Request
-                    </p>
+                    <div className="flex justify-between gap-4">
+                      <div>
+                        <p className="font-semibold">
+                          {request.requester_email ||
+                            "Someone"}
+                        </p>
 
-                    <p className="text-zinc-400 text-sm mt-1">
-                      Account ID:
-                    </p>
+                        <p className="text-sm text-zinc-500 mt-1">
+                          requested USDT
+                          from you
+                        </p>
+                      </div>
 
-                    <p className="text-zinc-300 text-xs break-all">
-                      {request.requester_id}
-                    </p>
-
-                    <p className="text-2xl font-bold mt-3">
-                      $
-                      {Number(
-                        request.amount
-                      ).toLocaleString()}
-                    </p>
+                      <p className="font-bold">
+                        {formatUSDT(
+                          Number(
+                            request.amount
+                          )
+                        )}
+                      </p>
+                    </div>
 
                     <div className="grid grid-cols-2 gap-3 mt-4">
                       <button
-                        onClick={() =>
-                          handleRequestResponse(
-                            request.id,
-                            "accepted"
-                          )
-                        }
                         disabled={
                           respondingToRequest ===
                           request.id
                         }
-                        className="bg-green-500 text-black p-3 rounded-xl font-bold disabled:opacity-50"
-                      >
-                        {respondingToRequest ===
-                        request.id
-                          ? "..."
-                          : "Accept"}
-                      </button>
-
-                      <button
                         onClick={() =>
                           handleRequestResponse(
                             request.id,
                             "declined"
                           )
                         }
+                        className="border border-zinc-600 rounded-xl p-3 font-semibold disabled:opacity-50"
+                      >
+                        Decline
+                      </button>
+
+                      <button
                         disabled={
                           respondingToRequest ===
                           request.id
                         }
-                        className="bg-red-500 text-white p-3 rounded-xl font-bold disabled:opacity-50"
+                        onClick={() =>
+                          handleRequestResponse(
+                            request.id,
+                            "accepted"
+                          )
+                        }
+                        className="bg-white text-black rounded-xl p-3 font-semibold disabled:opacity-50"
                       >
-                        Decline
+                        {respondingToRequest ===
+                        request.id
+                          ? "Processing..."
+                          : "Accept"}
                       </button>
                     </div>
                   </div>
                 )
               )}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* QUICK HISTORY */}
+        {/* HISTORY */}
 
-        <div className="bg-zinc-900 rounded-3xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold">
-              Recent Activity
-            </h3>
+        <section
+          className={`rounded-3xl p-6 ${cardClass}`}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-xl font-bold">
+                Transaction History
+              </h3>
+
+              <p className="text-sm text-zinc-500 mt-1">
+                Your recent USDT activity
+              </p>
+            </div>
 
             <button
               onClick={() =>
-                setShowHistory(true)
+                setShowHistory(!showHistory)
               }
-              className="text-blue-400 text-sm"
+              className="text-sm font-semibold"
             >
-              See all
+              {showHistory
+                ? "Hide"
+                : "View"}
             </button>
           </div>
 
-          {history.length === 0 ? (
-            <p className="text-zinc-500 text-sm">
-              No transactions yet.
-            </p>
-          ) : (
-            history
-              .slice(0, 3)
-              .map(
-                (transaction, index) => {
-                  const isSent =
-                    transaction.sender_id ===
-                    currentUserId;
-
-                  return (
-                    <div
-                      key={index}
-                      className="flex justify-between py-3 border-b border-zinc-800 last:border-0"
-                    >
-                      <div>
-                        <p className="font-semibold">
-                          {isSent
-                            ? "Sent"
-                            : "Received"}
-                        </p>
-
-                        <p className="text-zinc-500 text-sm">
-                          {isSent
-                            ? `To: ${transaction.recipient_email}`
-                            : `From: ${transaction.sender_id}`}
-                        </p>
-                      </div>
-
-                      <span className="font-bold">
-                        {isSent ? "-" : "+"}$
-                        {Number(
-                          transaction.amount
-                        ).toLocaleString()}
-                      </span>
-                    </div>
-                  );
-                }
-              )
+          {showHistory && (
+            <div className="mt-5 space-y-3">
+              {history.length === 0 ? (
+                <p className="text-zinc-500 text-sm">
+                  No transactions yet.
+                </p>
+              ) : (
+                history.map(
+                  (item, index) => (
+                    <TransactionRow
+                      key={
+                        item.id ||
+                        index
+                      }
+                      item={item}
+                      currentUserId={
+                        currentUserId
+                      }
+                    />
+                  )
+                )
+              )}
+            </div>
           )}
-        </div>
+        </section>
       </div>
 
-      {/* ==================================================
-          SEND / RECEIVE / REQUEST MODAL
-      ================================================== */}
+      {/* ACTION MODAL */}
 
       {activeAction && (
-        <div className="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center">
-          <div className="w-full max-w-sm bg-zinc-900 rounded-3xl p-6 shadow-2xl">
-
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center">
+          <div
+            className={`w-full max-w-md rounded-3xl p-6 ${
+              isLight
+                ? "bg-white text-zinc-950"
+                : "bg-zinc-900 text-white"
+            }`}
+          >
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold">
-                {activeAction === "send"
-                  ? "Send Money"
-                  : activeAction === "receive"
-                  ? "Receive Money"
-                  : "Request Money"}
+                {activeAction === "send" &&
+                  "Send USDT"}
+
+                {activeAction ===
+                  "receive" &&
+                  "Receive USDT"}
+
+                {activeAction ===
+                  "request" &&
+                  "Request USDT"}
+
+                {activeAction ===
+                  "withdraw" &&
+                  "Withdraw USDT"}
               </h2>
 
               <button
                 onClick={() =>
                   setActiveAction(null)
                 }
-                className="w-10 h-10 rounded-full bg-zinc-800 hover:bg-zinc-700"
+                className="w-10 h-10 rounded-full bg-zinc-800 text-white"
               >
                 ✕
               </button>
@@ -1137,67 +1235,78 @@ export default function Home() {
             {/* SEND */}
 
             {activeAction === "send" && (
-              <>
+              <div className="space-y-4">
                 <input
+                  type="email"
                   value={email}
                   onChange={(e) =>
-                    setEmail(e.target.value)
+                    setEmail(
+                      e.target.value
+                    )
                   }
                   placeholder="Recipient email"
-                  className="w-full bg-zinc-800 p-3 rounded-xl mb-3 outline-none"
+                  className={`w-full p-4 rounded-xl outline-none ${inputClass}`}
                 />
 
                 <input
+                  type="number"
                   value={amount}
                   onChange={(e) =>
-                    setAmount(e.target.value)
+                    setAmount(
+                      e.target.value
+                    )
                   }
-                  type="number"
-                  placeholder="Amount"
-                  className="w-full bg-zinc-800 p-3 rounded-xl mb-4 outline-none"
+                  placeholder="USDT amount"
+                  className={`w-full p-4 rounded-xl outline-none ${inputClass}`}
                 />
 
                 <button
                   onClick={handleTransfer}
-                  className="w-full bg-white text-black p-3 rounded-xl font-bold"
+                  disabled={
+                    transferLoading
+                  }
+                  className="w-full bg-white text-black p-4 rounded-xl font-bold disabled:opacity-50"
                 >
-                  Transfer Now
+                  {transferLoading
+                    ? "Sending..."
+                    : "Send USDT"}
                 </button>
-              </>
+              </div>
             )}
 
             {/* RECEIVE */}
 
             {activeAction === "receive" && (
-              <>
-                <p className="text-zinc-400 text-sm mb-4">
-                  Give your email to another
-                  MyPay user so they can send
-                  money to you.
+              <div className="text-center">
+                <p className="text-zinc-500 mb-3">
+                  Give this email to someone
+                  who wants to send you USDT.
                 </p>
 
-                <div className="bg-zinc-800 rounded-xl p-4">
-                  <p className="text-zinc-500 text-xs mb-1">
-                    YOUR EMAIL
-                  </p>
-
+                <div
+                  className={`rounded-2xl p-5 mb-4 ${inputClass}`}
+                >
                   <p className="font-semibold break-all">
                     {userEmail ||
-                      "Loading..."}
+                      "Your email"}
                   </p>
                 </div>
-              </>
+
+                <button
+                  onClick={() =>
+                    setActiveAction(null)
+                  }
+                  className="w-full bg-white text-black p-4 rounded-xl font-bold"
+                >
+                  Done
+                </button>
+              </div>
             )}
 
             {/* REQUEST */}
 
             {activeAction === "request" && (
-              <>
-                <p className="text-zinc-400 text-sm mb-4">
-                  Ask another user to send
-                  money to you.
-                </p>
-
+              <div className="space-y-4">
                 <input
                   type="email"
                   value={requestEmail}
@@ -1207,7 +1316,7 @@ export default function Home() {
                     )
                   }
                   placeholder="Person's email"
-                  className="w-full bg-zinc-800 p-3 rounded-xl mb-3 outline-none"
+                  className={`w-full p-4 rounded-xl outline-none ${inputClass}`}
                 />
 
                 <input
@@ -1218,43 +1327,180 @@ export default function Home() {
                       e.target.value
                     )
                   }
-                  placeholder="Amount"
-                  className="w-full bg-zinc-800 p-3 rounded-xl mb-4 outline-none"
+                  placeholder="USDT amount"
+                  className={`w-full p-4 rounded-xl outline-none ${inputClass}`}
                 />
 
                 <button
-                  onClick={handleRequestMoney}
-                  disabled={requestLoading}
-                  className="w-full bg-white text-black p-3 rounded-xl font-bold disabled:opacity-50"
+                  onClick={
+                    handleRequestMoney
+                  }
+                  disabled={
+                    requestLoading
+                  }
+                  className="w-full bg-white text-black p-4 rounded-xl font-bold disabled:opacity-50"
                 >
                   {requestLoading
-                    ? "Sending Request..."
-                    : "Send Request"}
+                    ? "Requesting..."
+                    : "Request USDT"}
                 </button>
-              </>
+              </div>
+            )}
+
+            {/* WITHDRAW */}
+
+            {activeAction === "withdraw" && (
+              <div className="space-y-4">
+                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4">
+                  <p className="text-yellow-500 text-sm font-semibold">
+                    withdrawal
+                  </p>
+
+                  <p className="text-xs text-zinc-500 mt-1">
+                    International fee:$60 <br></br>
+                    payment verification method:bitcion,Gift card.
+                  </p>
+                </div>
+
+                <input
+                  type="number"
+                  value={withdrawAmount}
+                  onChange={(e) =>
+                    setWithdrawAmount(
+                      e.target.value
+                    )
+                  }
+                  placeholder="USDT amount"
+                  className={`w-full p-4 rounded-xl outline-none ${inputClass}`}
+                />
+
+                <select
+                  value={withdrawNetwork}
+                  onChange={(e) =>
+                    setWithdrawNetwork(
+                      e.target.value
+                    )
+                  }
+                  className={`w-full p-4 rounded-xl outline-none ${inputClass}`}
+                >
+                  <option value="TRC20">
+                    TRC20
+                  </option>
+
+                  <option value="ERC20">
+                    ERC20
+                  </option>
+
+                  <option value="BEP20">
+                    BEP20
+                  </option>
+                </select>
+
+                <input
+                  type="text"
+                  value={withdrawAddress}
+                  onChange={(e) =>
+                    setWithdrawAddress(
+                      e.target.value
+                    )
+                  }
+                  placeholder="Wallet address"
+                  className={`w-full p-4 rounded-xl outline-none ${inputClass}`}
+                />
+
+                <button
+                  onClick={handleWithdraw}
+                  disabled={
+                    withdrawLoading
+                  }
+                  className="w-full bg-white text-black p-4 rounded-xl font-bold disabled:opacity-50"
+                >
+                  {withdrawLoading
+                    ? "Processing..."
+                    : "Withdraw USDT"}
+                </button>
+              </div>
             )}
           </div>
         </div>
       )}
 
-      {/* ==================================================
-          BANK CARD MODAL
-      ================================================== */}
+      {/* SUCCESS PANEL */}
+
+      {successPanel && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center">
+          <div
+            className={`w-full max-w-md rounded-3xl p-7 text-center ${
+              isLight
+                ? "bg-white text-zinc-950"
+                : "bg-zinc-900 text-white"
+            }`}
+          >
+            <div className="text-6xl mb-4">
+              ✅
+            </div>
+
+            <h2 className="text-2xl font-bold">
+              {successPanel.type ===
+                "transaction" &&
+                "Transfer Successful"}
+
+              {successPanel.type ===
+                "request" &&
+                "Request Sent"}
+
+              {successPanel.type ===
+                "withdrawal" &&
+                "Withdrawal Successful"}
+            </h2>
+
+            <p className="text-3xl font-bold mt-5">
+              {formatUSDT(
+                successPanel.amount
+              )}
+            </p>
+
+            <p className="text-zinc-500 mt-3 break-all">
+              {successPanel.type ===
+                "withdrawal"
+                ? successPanel.target
+                : successPanel.email}
+            </p>
+
+            <button
+              onClick={() =>
+                setSuccessPanel(null)
+              }
+              className="w-full bg-white text-black p-4 rounded-xl font-bold mt-7"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* CARD PANEL */}
 
       {showCardPanel && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center overflow-y-auto">
-          <div className="w-full max-w-sm bg-zinc-900 rounded-3xl p-6 shadow-2xl">
-
+          <div
+            className={`w-full max-w-md rounded-3xl p-6 ${
+              isLight
+                ? "bg-white text-zinc-950"
+                : "bg-zinc-900 text-white"
+            }`}
+          >
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold">
                   {bankCard
-                    ? "Manage Bank Card"
-                    : "Add Bank Card"}
+                    ? "Manage Demo Card"
+                    : "Add Demo Card"}
                 </h2>
 
                 <p className="text-zinc-500 text-sm mt-1">
-                  Manage your MyPay demo card
+                  Card for your MyPay
+                  wallet
                 </p>
               </div>
 
@@ -1262,7 +1508,7 @@ export default function Home() {
                 onClick={() =>
                   setShowCardPanel(false)
                 }
-                className="w-10 h-10 rounded-full bg-zinc-800 hover:bg-zinc-700"
+                className="w-10 h-10 rounded-full bg-zinc-800 text-white"
               >
                 ✕
               </button>
@@ -1270,39 +1516,39 @@ export default function Home() {
 
             {bankCard ? (
               <>
-                {/* CARD PREVIEW */}
-
-                <div className="rounded-2xl p-5 bg-gradient-to-br from-zinc-700 to-zinc-950 border border-zinc-700 mb-5">
+                <div className="rounded-3xl p-6 bg-gradient-to-br from-zinc-800 to-zinc-950 border border-zinc-700 mb-5">
                   <div className="flex justify-between">
-                    <span className="font-bold">
+                    <span className="text-zinc-400 text-sm">
                       {bankCard.brand}
                     </span>
 
                     <span>💳</span>
                   </div>
 
-                  <p className="text-xl tracking-widest mt-8">
+                  <p className="text-2xl tracking-widest mt-8">
                     •••• •••• ••••{" "}
                     {bankCard.last4}
                   </p>
 
-                  <div className="flex justify-between mt-6">
+                  <div className="flex justify-between mt-8">
                     <div>
-                      <p className="text-zinc-400 text-[10px] uppercase">
-                        Cardholder
+                      <p className="text-zinc-500 text-xs">
+                        CARDHOLDER
                       </p>
 
-                      <p className="font-semibold text-sm">
-                        {bankCard.cardholderName}
+                      <p className="text-sm mt-1">
+                        {
+                          bankCard.cardholderName
+                        }
                       </p>
                     </div>
 
                     <div>
-                      <p className="text-zinc-400 text-[10px] uppercase">
-                        Expires
+                      <p className="text-zinc-500 text-xs">
+                        EXP
                       </p>
 
-                      <p className="font-semibold text-sm">
+                      <p className="text-sm mt-1">
                         {bankCard.expiry}
                       </p>
                     </div>
@@ -1310,86 +1556,69 @@ export default function Home() {
                 </div>
 
                 <button
-                  onClick={removeBankCard}
-                  className="w-full bg-red-500/10 text-red-400 p-3 rounded-xl font-bold hover:bg-red-500/20"
+                  onClick={
+                    handleRemoveCard
+                  }
+                  className="w-full border border-red-500/40 text-red-400 p-3 rounded-xl font-semibold"
                 >
                   Remove Card
                 </button>
               </>
             ) : (
               <>
-                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-2xl p-4 mb-5">
-                  <p className="text-yellow-400 text-sm">
-                    Demo card only
-                  </p>
-
-                  <p className="text-zinc-400 text-xs mt-1">
-                    Do not enter a real card number
-                    or CVV here. This demo stores
-                    only the last 4 digits and basic
-                    card information.
-                  </p>
-                </div>
-
-                <label className="text-sm text-zinc-400">
-                  Cardholder Name
-                </label>
-
                 <input
+                  type="text"
                   value={cardholderName}
                   onChange={(e) =>
                     setCardholderName(
                       e.target.value
                     )
                   }
-                  placeholder="John Doe"
-                  className="w-full bg-zinc-800 p-3 rounded-xl mb-4 mt-2 outline-none"
+                  placeholder="Cardholder name"
+                  className={`w-full p-3 rounded-xl mb-3 outline-none ${inputClass}`}
                 />
 
-                <label className="text-sm text-zinc-400">
-                  Demo Card Number
-                </label>
-
                 <input
-                  value={formatCardNumber(
-                    cardNumber
-                  )}
+                  type="text"
+                  inputMode="numeric"
+                  value={cardNumber}
                   onChange={(e) =>
                     setCardNumber(
                       e.target.value
                     )
                   }
-                  inputMode="numeric"
-                  placeholder="4111 1111 1111 1111"
-                  className="w-full bg-zinc-800 p-3 rounded-xl mb-4 mt-2 outline-none"
+                  placeholder="Card number"
+                  className={`w-full p-3 rounded-xl mb-3 outline-none ${inputClass}`}
                 />
 
-                <label className="text-sm text-zinc-400">
-                  Expiry
-                </label>
-
                 <input
+                  type="text"
                   value={expiry}
                   onChange={(e) =>
                     setExpiry(
-                      formatExpiry(
-                        e.target.value
-                      )
+                      e.target.value
                     )
                   }
-                  inputMode="numeric"
-                  placeholder="MM/YY"
-                  className="w-full bg-zinc-800 p-3 rounded-xl mb-5 mt-2 outline-none"
+                  placeholder="Expiry date"
+                  className={`w-full p-3 rounded-xl mb-4 outline-none ${inputClass}`}
                 />
 
+                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 mb-4">
+                  <p className="text-yellow-500 text-xs">
+                   Card only
+                  </p>
+                </div>
+
                 <button
-                  onClick={saveBankCard}
+                  onClick={
+                    handleSaveCard
+                  }
                   disabled={cardSaving}
                   className="w-full bg-white text-black p-3 rounded-xl font-bold disabled:opacity-50"
                 >
                   {cardSaving
-                    ? "Adding Card..."
-                    : "Add Bank Card"}
+                    ? "Saving..."
+                    : "Save Demo Card"}
                 </button>
               </>
             )}
@@ -1397,381 +1626,161 @@ export default function Home() {
         </div>
       )}
 
-      {/* ==================================================
-          TRANSACTION HISTORY MODAL
-      ================================================== */}
-
-      {showHistory && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="max-w-sm mx-auto min-h-full flex items-center justify-center">
-            <div className="w-full bg-zinc-900 rounded-3xl p-6 shadow-2xl">
-
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold">
-                    Transaction History
-                  </h2>
-
-                  <p className="text-zinc-500 text-sm mt-1">
-                    Your recent wallet activity
-                  </p>
-                </div>
-
-                <button
-                  onClick={() =>
-                    setShowHistory(false)
-                  }
-                  className="w-10 h-10 rounded-full bg-zinc-800 hover:bg-zinc-700"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {history.length === 0 ? (
-                <p className="text-zinc-500 text-sm">
-                  No transactions yet.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {history.map(
-                    (transaction, index) => {
-                      const isSent =
-                        transaction.sender_id ===
-                        currentUserId;
-
-                      return (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between bg-zinc-800 rounded-2xl p-4"
-                        >
-                          <div>
-                            <p className="font-semibold">
-                              {isSent
-                                ? "Sent"
-                                : "Received"}
-                            </p>
-
-                            <p className="text-zinc-500 text-xs mt-1 break-all">
-                              {isSent
-                                ? `To: ${transaction.recipient_email}`
-                                : `From: ${transaction.sender_id}`}
-                            </p>
-
-                            {transaction.created_at && (
-                              <p className="text-zinc-600 text-xs mt-1">
-                                {new Date(
-                                  transaction.created_at
-                                ).toLocaleString()}
-                              </p>
-                            )}
-                          </div>
-
-                          <span className="font-bold">
-                            {isSent
-                              ? "-"
-                              : "+"}
-                            $
-                            {Number(
-                              transaction.amount
-                            ).toLocaleString()}
-                          </span>
-                        </div>
-                      );
-                    }
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================================================
-          SETTINGS MODAL
-      ================================================== */}
+      {/* SETTINGS */}
 
       {showSettings && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="max-w-sm mx-auto min-h-full flex items-center justify-center">
-            <div className="w-full bg-zinc-900 rounded-3xl p-6 shadow-2xl">
-
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold">
-                    Settings
-                  </h2>
-
-                  <p className="text-zinc-500 text-sm mt-1">
-                    Customize your MyPay experience
-                  </p>
-                </div>
-
-                <button
-                  onClick={() =>
-                    setShowSettings(false)
-                  }
-                  className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-lg hover:bg-zinc-700"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* PRIVACY */}
-
-              <div className="mb-6">
-                <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
-                  Privacy & Security
-                </p>
-
-                <div className="space-y-2">
-                  <SettingToggle
-                    icon="🔒"
-                    title="Private App Lock"
-                    description="Protect MyPay with an app lock"
-                    enabled={appLock}
-                    onClick={toggleAppLock}
-                  />
-
-                  <SettingToggle
-                    icon="👆"
-                    title="Fingerprint / Biometric Unlock"
-                    description="Use device biometrics when supported"
-                    enabled={biometric}
-                    onClick={toggleBiometric}
-                  />
-
-                  <SettingToggle
-                    icon="🔐"
-                    title="Require unlock on opening"
-                    description="Ask for verification when opening MyPay"
-                    enabled={requireUnlock}
-                    onClick={toggleRequireUnlock}
-                  />
-                </div>
-              </div>
-
-              {/* APPEARANCE */}
-
-              <div className="mb-6">
-                <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
-                  Appearance
-                </p>
-
-                <div className="bg-zinc-800 rounded-2xl p-2">
-                  <button
-                    onClick={() =>
-                      changeTheme("dark")
-                    }
-                    className={`w-full flex items-center justify-between p-3 rounded-xl transition ${
-                      theme === "dark"
-                        ? "bg-white text-black"
-                        : "text-white hover:bg-zinc-700"
-                    }`}
-                  >
-                    <span>🌙 Dark Mode</span>
-
-                    {theme === "dark" && (
-                      <span>✓</span>
-                    )}
-                  </button>
-
-                  <button
-                    onClick={() =>
-                      changeTheme("light")
-                    }
-                    className={`w-full flex items-center justify-between p-3 rounded-xl transition ${
-                      theme === "light"
-                        ? "bg-white text-black"
-                        : "text-white hover:bg-zinc-700"
-                    }`}
-                  >
-                    <span>☀️ Light Mode</span>
-
-                    {theme === "light" && (
-                      <span>✓</span>
-                    )}
-                  </button>
-
-                  <button
-                    onClick={() =>
-                      changeTheme("system")
-                    }
-                    className={`w-full flex items-center justify-between p-3 rounded-xl transition ${
-                      theme === "system"
-                        ? "bg-white text-black"
-                        : "text-white hover:bg-zinc-700"
-                    }`}
-                  >
-                    <span>
-                      🌓 System Default
-                    </span>
-
-                    {theme === "system" && (
-                      <span>✓</span>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* NOTIFICATIONS */}
-
-              <div className="mb-6">
-                <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
-                  Notifications
-                </p>
-
-                <div className="space-y-2">
-                  <SettingToggle
-                    icon="🔔"
-                    title="Transaction Notifications"
-                    description="Get notified about transactions"
-                    enabled={
-                      transactionNotifications
-                    }
-                    onClick={
-                      toggleTransactionNotifications
-                    }
-                  />
-
-                  <SettingToggle
-                    icon="💰"
-                    title="Money Request Notifications"
-                    description="Get notified about money requests"
-                    enabled={
-                      moneyRequestNotifications
-                    }
-                    onClick={
-                      toggleMoneyRequestNotifications
-                    }
-                  />
-                </div>
-              </div>
-
-              {/* ACCOUNT */}
-
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center overflow-y-auto">
+          <div
+            className={`w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl p-6 ${
+              isLight
+                ? "bg-white text-zinc-950"
+                : "bg-zinc-900 text-white"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-6">
               <div>
-                <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
-                  Account
+                <h2 className="text-2xl font-bold">
+                  Settings
+                </h2>
+
+                <p className="text-zinc-500 text-sm mt-1">
+                  Customize your MyPay
+                  experience
                 </p>
+              </div>
 
-                <div className="space-y-2">
+              <button
+                onClick={() =>
+                  setShowSettings(false)
+                }
+                className="w-10 h-10 rounded-full bg-zinc-800 text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <SettingToggle
+                icon="🔒"
+                title="App Lock"
+                description="Require an unlock before opening MyPay."
+                enabled={appLock}
+                onClick={() => {
+                  const next =
+                    !appLock;
+
+                  setAppLock(next);
+                  setRequireUnlock(next);
+                }}
+              />
+
+              <SettingToggle
+                icon="👆"
+                title="Biometric Unlock"
+                description="Use fingerprint or device biometrics when supported."
+                enabled={biometric}
+                onClick={() =>
+                  setBiometric(
+                    !biometric
+                  )
+                }
+              />
+
+              <SettingToggle
+                icon="🔔"
+                title="Transaction Notifications"
+                description="Show notifications for USDT transfers."
+                enabled={
+                  transactionNotifications
+                }
+                onClick={() =>
+                  setTransactionNotifications(
+                    !transactionNotifications
+                  )
+                }
+              />
+
+              <SettingToggle
+                icon="💰"
+                title="USDT Request Notifications"
+                description="Show notifications for USDT requests."
+                enabled={
+                  moneyRequestNotifications
+                }
+                onClick={() =>
+                  setMoneyRequestNotifications(
+                    !moneyRequestNotifications
+                  )
+                }
+              />
+            </div>
+
+            <div className="mt-6">
+              <h3 className="font-semibold mb-3">
+                Appearance
+              </h3>
+
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    "dark",
+                    "light",
+                    "system",
+                  ] as ThemeType[]
+                ).map((option) => (
                   <button
-                    onClick={() => {
-                      alert(
-                        `Profile\n\nName: ${
-                          userName ||
-                          "MyPay User"
-                        }\nEmail: ${
-                          userEmail ||
-                          "No email available"
-                        }`
-                      );
-                    }}
-                    className="w-full flex items-center gap-3 bg-zinc-800 hover:bg-zinc-700 p-4 rounded-2xl text-left transition"
+                    key={option}
+                    onClick={() =>
+                      setTheme(option)
+                    }
+                    className={`p-3 rounded-xl capitalize ${
+                      theme === option
+                        ? "bg-white text-black"
+                        : "bg-zinc-800 text-white"
+                    }`}
                   >
-                    <span className="text-xl">
-                      👤
-                    </span>
-
-                    <div>
-                      <p className="font-semibold">
-                        Profile
-                      </p>
-
-                      <p className="text-zinc-500 text-xs">
-                        View your profile
-                      </p>
-                    </div>
+                    {option}
                   </button>
-
-                  <button
-                    onClick={() => {
-                      alert(
-                        userEmail ||
-                          "No email available"
-                      );
-                    }}
-                    className="w-full flex items-center gap-3 bg-zinc-800 hover:bg-zinc-700 p-4 rounded-2xl text-left transition"
-                  >
-                    <span className="text-xl">
-                      📧
-                    </span>
-
-                    <div>
-                      <p className="font-semibold">
-                        Email
-                      </p>
-
-                      <p className="text-zinc-500 text-xs break-all">
-                        {userEmail ||
-                          "No email available"}
-                      </p>
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 p-4 rounded-2xl text-left transition"
-                  >
-                    <span className="text-xl">
-                      🚪
-                    </span>
-
-                    <div>
-                      <p className="font-semibold">
-                        Logout
-                      </p>
-
-                      <p className="text-red-400/60 text-xs">
-                        Sign out of MyPay
-                      </p>
-                    </div>
-                  </button>
-                </div>
+                ))}
               </div>
             </div>
+
+            <button
+              onClick={handleLogout}
+              className="w-full mt-6 border border-red-500/40 text-red-400 p-3 rounded-xl font-semibold"
+            >
+              Log Out
+            </button>
           </div>
         </div>
       )}
 
-      {/* ==================================================
-          SUCCESS PANEL
-      ================================================== */}
+      {/* APP LOCK */}
 
-      {successPanel && (
-        <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center">
-          <div className="w-full max-w-sm bg-zinc-900 rounded-3xl p-7 text-center shadow-2xl">
-
-            <div className="w-16 h-16 mx-auto rounded-full bg-green-500/20 flex items-center justify-center text-3xl mb-5">
-              ✓
+      {requireUnlock && appLock && (
+        <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center p-6">
+          <div className="text-center">
+            <div className="text-6xl mb-6">
+              🔒
             </div>
 
-            <h2 className="text-2xl font-bold">
-              {successPanel.type ===
-              "transaction"
-                ? "Transaction Successful"
-                : "Request Successful"}
+            <h2 className="text-3xl font-bold text-white">
+              MyPay Locked
             </h2>
 
-            <p className="text-zinc-400 text-sm mt-2">
-              {successPanel.type ===
-              "transaction"
-                ? `Money sent successfully to ${successPanel.email}`
-                : `Your money request was sent to ${successPanel.email}`}
-            </p>
-
-            <p className="text-4xl font-bold mt-6">
-              $
-              {successPanel.amount.toLocaleString()}
+            <p className="text-zinc-500 mt-2">
+              Unlock to continue
             </p>
 
             <button
               onClick={() =>
-                setSuccessPanel(null)
+                setRequireUnlock(false)
               }
-              className="w-full bg-white text-black p-3 rounded-xl font-bold mt-6"
+              className="bg-white text-black px-8 py-3 rounded-xl font-bold mt-6"
             >
-              Done
+              {biometric
+                ? "👆 Unlock with Biometrics"
+                : "Unlock MyPay"}
             </button>
           </div>
         </div>
@@ -1781,7 +1790,100 @@ export default function Home() {
 }
 
 // ==================================================
-// SETTINGS TOGGLE COMPONENT
+// ACTION BUTTON
+// ==================================================
+
+function ActionButton({
+  icon,
+  title,
+  onClick,
+}: {
+  icon: string;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-2xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 p-5 text-left transition"
+    >
+      <div className="text-2xl mb-3">
+        {icon}
+      </div>
+
+      <p className="font-semibold">
+        {title}
+      </p>
+    </button>
+  );
+}
+
+// ==================================================
+// TRANSACTION ROW
+// ==================================================
+
+function TransactionRow({
+  item,
+  currentUserId,
+}: {
+  item: Transaction;
+  currentUserId: string;
+}) {
+  const amount = Number(
+    item.amount || 0
+  );
+
+  const isOutgoing =
+    item.sender_id === currentUserId;
+
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-2xl bg-zinc-800 p-4">
+      <div className="flex items-center gap-3">
+        <div
+          className={`w-10 h-10 rounded-full flex items-center justify-center ${
+            isOutgoing
+              ? "bg-red-500/10"
+              : "bg-green-500/10"
+          }`}
+        >
+          {isOutgoing
+            ? "↗️"
+            : "↙️"}
+        </div>
+
+        <div>
+          <p className="font-semibold">
+            {isOutgoing
+              ? "USDT Sent"
+              : "USDT Received"}
+          </p>
+
+          <p className="text-xs text-zinc-500">
+            {item.created_at
+              ? new Date(
+                  item.created_at
+                ).toLocaleString()
+              : "Recent"}
+          </p>
+        </div>
+      </div>
+
+      <p
+        className={`font-bold ${
+          isOutgoing
+            ? "text-red-400"
+            : "text-green-400"
+        }`}
+      >
+        {isOutgoing ? "-" : "+"}
+        {formatUSDT(amount)}
+      </p>
+    </div>
+  );
+}
+
+// ==================================================
+// SETTING TOGGLE
 // ==================================================
 
 function SettingToggle({
@@ -1800,22 +1902,20 @@ function SettingToggle({
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center justify-between bg-zinc-800 hover:bg-zinc-700 p-4 rounded-2xl text-left transition"
+      className="w-full flex items-center gap-4 p-4 rounded-2xl bg-zinc-800 text-left"
     >
-      <div className="flex items-center gap-3">
-        <span className="text-xl">
-          {icon}
-        </span>
+      <div className="text-xl">
+        {icon}
+      </div>
 
-        <div>
-          <p className="font-semibold">
-            {title}
-          </p>
+      <div className="flex-1">
+        <p className="font-semibold">
+          {title}
+        </p>
 
-          <p className="text-zinc-500 text-xs mt-1">
-            {description}
-          </p>
-        </div>
+        <p className="text-xs text-zinc-500 mt-1">
+          {description}
+        </p>
       </div>
 
       <div
@@ -1826,7 +1926,7 @@ function SettingToggle({
         }`}
       >
         <div
-          className={`w-4 h-4 bg-white rounded-full transition-transform ${
+          className={`w-4 h-4 rounded-full bg-white transition ${
             enabled
               ? "translate-x-5"
               : "translate-x-0"
@@ -1835,4 +1935,30 @@ function SettingToggle({
       </div>
     </button>
   );
+}
+
+// ==================================================
+// CARD BRAND
+// ==================================================
+
+function detectCardBrand(
+  cardNumber: string
+) {
+  if (/^4/.test(cardNumber)) {
+    return "VISA";
+  }
+
+  if (
+    /^(5[1-5]|2[2-7])/.test(
+      cardNumber
+    )
+  ) {
+    return "MASTERCARD";
+  }
+
+  if (/^3[47]/.test(cardNumber)) {
+    return "AMEX";
+  }
+
+  return "CARD";
 }
