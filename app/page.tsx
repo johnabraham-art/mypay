@@ -1494,8 +1494,8 @@ export default function Home() {
               <div>
                 <h2 className="text-2xl font-bold">
                   {bankCard
-                    ? "Manage Demo Card"
-                    : "Add Demo Card"}
+                    ? "Manage Card"
+                    : "Add Card"}
                 </h2>
 
                 <p className="text-zinc-500 text-sm mt-1">
@@ -1618,7 +1618,7 @@ export default function Home() {
                 >
                   {cardSaving
                     ? "Saving..."
-                    : "Save Demo Card"}
+                    : "Save Card"}
                 </button>
               </>
             )}
