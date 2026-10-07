@@ -9,24 +9,36 @@ export default function Login() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = async () => {
-    if (!email || !password) {
+  const handleLogin = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+
+    if (!email.trim() || !password) {
       alert("Please enter your email and password");
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    setLoading(true);
 
-    if (error) {
-      alert("Login failed: " + error.message);
-      return;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) {
+        alert("Login failed: " + error.message);
+        setLoading(false);
+        return;
+      }
+
+      router.push("/");
+    } catch (error) {
+      console.error(error);
+      alert("Something went wrong. Please try again.");
+      setLoading(false);
     }
-
- router.push("/");
   };
 
   return (
@@ -43,8 +55,10 @@ export default function Login() {
           </p>
         </div>
 
-        <div className="bg-zinc-900 rounded-3xl p-6">
-
+        <form
+          onSubmit={handleLogin}
+          className="bg-zinc-900 rounded-3xl p-6"
+        >
           <h2 className="text-2xl font-bold mb-6">
             Log in
           </h2>
@@ -54,6 +68,7 @@ export default function Login() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
             className="w-full bg-zinc-800 p-3 rounded-xl mb-3 outline-none"
           />
 
@@ -62,28 +77,30 @@ export default function Login() {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
             className="w-full bg-zinc-800 p-3 rounded-xl mb-4 outline-none"
           />
 
           <button
-            onClick={handleLogin}
-            className="w-full bg-white text-black p-3 rounded-xl font-bold"
+            type="submit"
+            disabled={loading}
+            className="w-full bg-white text-black p-3 rounded-xl font-bold disabled:opacity-50"
           >
-            Log In
+            {loading ? "Logging in..." : "Log In"}
           </button>
 
           <p className="text-center text-zinc-400 text-sm mt-5">
             Don't have a MyPay account?
           </p>
 
-         <button
-  onClick={() => router.push("/signup")}
-  className="w-full border border-zinc-700 p-3 rounded-xl mt-3 font-semibold"
->
-  Create account
-</button>
-
-        </div>
+          <button
+            type="button"
+            onClick={() => router.push("/signup")}
+            className="w-full border border-zinc-700 p-3 rounded-xl mt-3 font-semibold"
+          >
+            Create account
+          </button>
+        </form>
 
       </div>
     </main>
