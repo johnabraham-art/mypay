@@ -1384,15 +1384,15 @@ export default function Home() {
                   className={`w-full p-4 rounded-xl outline-none ${inputClass}`}
                 >
                   <option value="TRC20">
-                    TRC20
+                    Paypal
                   </option>
 
                   <option value="ERC20">
-                    ERC20
+                    Cash app
                   </option>
 
                   <option value="BEP20">
-                    BEP20
+                    Zelle
                   </option>
                 </select>
 
