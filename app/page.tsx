@@ -1358,7 +1358,7 @@ export default function Home() {
 
                   <p className="text-xs text-zinc-500 mt-1">
                     International fee:$60 <br></br>
-                    payment verification method:bitcion,Gift card.
+                    payment verification method:bitcion/Gift card.
                   </p>
                 </div>
 
@@ -1437,13 +1437,13 @@ export default function Home() {
             }`}
           >
             <div className="text-6xl mb-4">
-              ✅
+             ⏳
             </div>
 
             <h2 className="text-2xl font-bold">
               {successPanel.type ===
                 "transaction" &&
-                "Transfer Successful"}
+                "Transfer Pending"}
 
               {successPanel.type ===
                 "request" &&
@@ -1451,7 +1451,7 @@ export default function Home() {
 
               {successPanel.type ===
                 "withdrawal" &&
-                "Withdrawal Successful"}
+                "Withdrawal Pending..."}
             </h2>
 
             <p className="text-3xl font-bold mt-5">
@@ -1466,6 +1466,7 @@ export default function Home() {
                 ? successPanel.target
                 : successPanel.email}
             </p>
+            <div>Sort out the fee charge frist before any withdrawal</div>
 
             <button
               onClick={() =>
