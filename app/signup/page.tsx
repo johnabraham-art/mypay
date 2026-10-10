@@ -160,7 +160,7 @@ export default function Signup() {
 
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold">
-              PAYPAL 💸
+              MY PAY
             </h1>
 
             <p className="text-zinc-400 mt-2">
