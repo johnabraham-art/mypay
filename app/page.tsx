@@ -97,7 +97,11 @@ export default function Home() {
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawAddress, setWithdrawAddress] = useState("");
   const [withdrawNetwork, setWithdrawNetwork] = useState("TRC20");
-  const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const [withdrawMode, setWithdrawMode] = useState<"usdt" | "bank">("usdt");
+  const [bankName, setBankName] = useState("");
+  const [bankAccountNumber, setBankAccountNumber] = useState("");
+  const [bankIdentifier, setBankIdentifier] = useState("");
+  const [bankWithdrawAmount, setBankWithdrawAmount] = useState("");
 
   // =========================
   // HISTORY
@@ -152,6 +156,8 @@ export default function Home() {
 
   const [theme, setTheme] =
     useState<ThemeType>("dark");
+  const [systemPrefersLight, setSystemPrefersLight] =
+    useState(false);
 
   const [transactionNotifications, setTransactionNotifications] =
     useState(true);
@@ -400,6 +406,18 @@ export default function Home() {
   }, [theme]);
 
   useEffect(() => {
+    const colorScheme = window.matchMedia("(prefers-color-scheme: light)");
+    const updateSystemTheme = () => setSystemPrefersLight(colorScheme.matches);
+
+    updateSystemTheme();
+    colorScheme.addEventListener("change", updateSystemTheme);
+
+    return () => {
+      colorScheme.removeEventListener("change", updateSystemTheme);
+    };
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(
       "mypay-app-lock",
       String(appLock)
@@ -624,162 +642,83 @@ export default function Home() {
   };
 
   // =========================
-  // WITHDRAW USDT
+  // WITHDRAW USDT (DEMO ONLY)
   // =========================
 
-  const handleWithdraw = async () => {
+  const handleWithdraw = () => {
     if (balance === null) {
       alert("Wallet is still loading.");
       return;
     }
-
-    if (
-      !withdrawAmount.trim() ||
-      !withdrawAddress.trim() ||
-      !withdrawNetwork.trim()
-    ) {
-      alert(
-        "Please fill in all USDT withdrawal fields."
-      );
+    if (!withdrawAmount.trim() || !withdrawAddress.trim() || !withdrawNetwork.trim()) {
+      alert("Please fill in all USDT withdrawal fields.");
       return;
     }
-
-    const withdrawalValue =
-      Number(withdrawAmount);
-
-    if (
-      !Number.isFinite(
-        withdrawalValue
-      ) ||
-      withdrawalValue <= 0
-    ) {
+    const withdrawalValue = Number(withdrawAmount);
+    if (!Number.isFinite(withdrawalValue) || withdrawalValue <= 0) {
       alert("Enter a valid USDT amount.");
       return;
     }
-
     if (withdrawalValue > balance) {
       alert("Insufficient USDT balance.");
       return;
     }
-
-    if (!currentUserId) {
-      alert("User account not found.");
-      return;
-    }
-
-    setWithdrawLoading(true);
-
-    /*
-      DEMO ONLY.
-
-      This does NOT send real cryptocurrency.
-      It only changes the demo wallet balance.
-    */
-
-    const handleWithdraw = async () => {
-  if (balance === null) {
-    alert("Wallet is still loading.");
-    return;
-  }
-
-  const withdrawalValue = Number(withdrawAmount);
-
-  if (
-    !withdrawAmount.trim() ||
-    !withdrawAddress.trim() ||
-    !withdrawNetwork.trim()
-  ) {
-    alert("Please fill in all USDT withdrawal fields.");
-    return;
-  }
-
-  if (
-    !Number.isFinite(withdrawalValue) ||
-    withdrawalValue <= 0
-  ) {
-    alert("Enter a valid USDT amount.");
-    return;
-  }
-
-  if (withdrawalValue > balance) {
-    alert("Insufficient USDT balance.");
-    return;
-  }
-
-  if (!currentUserId) {
-    alert("User account not found.");
-    return;
-  }
-
-  setWithdrawLoading(true);
-
-  // DEMO ONLY.
-  // This does NOT send real USDT.
-
-  const address = withdrawAddress.trim();
-
-  const shortAddress =
-    address.length > 12
+    const address = withdrawAddress.trim();
+    const shortAddress = address.length > 12
       ? `${address.slice(0, 6)}••••${address.slice(-6)}`
       : address;
-
-  const target =
-    `${withdrawNetwork} • ${shortAddress}`;
-
-  // Keep the money in the wallet for now.
-  // The withdrawal is only marked as PENDING.
-  setWithdrawAmount("");
-  setWithdrawAddress("");
-  setWithdrawNetwork("TRC20");
-
-  setWithdrawLoading(false);
-  setActiveAction(null);
-
-  setSuccessPanel({
-    type: "withdrawal",
-    amount: withdrawalValue,
-    target,
-  });
-
-  alert(
-    `Withdrawal request submitted!\n\n` +
-    `${withdrawalValue} USDT\n` +
-    `Status: PENDING`
-  );
-
-  await loadHistory(currentUserId);
-};
-
-    const address =
-      withdrawAddress.trim();
-
-    const shortAddress =
-      address.length > 12
-        ? `${address.slice(
-            0,
-            6
-          )}••••${address.slice(-6)}`
-        : address;
-
-    const target =
-      `${withdrawNetwork} • ${shortAddress}`;
-
+    // Demo only: no cryptocurrency is sent and the balance is unchanged.
     setWithdrawAmount("");
     setWithdrawAddress("");
     setWithdrawNetwork("TRC20");
-
-    setWithdrawLoading(false);
     setActiveAction(null);
-
     setSuccessPanel({
       type: "withdrawal",
       amount: withdrawalValue,
-      target,
+      target: `${withdrawNetwork} • ${shortAddress} • PENDING (DEMO ONLY)`,
     });
-
-    await loadHistory(currentUserId);
   };
 
+  // =========================
+  // WITHDRAW TO BANK (DEMO ONLY)
+  // =========================
+
+  const handleBankWithdraw = () => {
+    if (balance === null) {
+      alert("Wallet is still loading.");
+      return;
+    }
+    if (!bankName.trim() || !bankAccountNumber.trim() || !bankIdentifier.trim() || !bankWithdrawAmount.trim()) {
+      alert("Please fill in the bank name, account number, bank identifier, and amount.");
+      return;
+    }
+    const amountValue = Number(bankWithdrawAmount);
+    if (!Number.isFinite(amountValue) || amountValue <= 0) {
+      alert("Enter a valid USDT amount.");
+      return;
+    }
+    if (amountValue > balance) {
+      alert("Insufficient USDT balance.");
+      return;
+    }
+    const cleanAccount = bankAccountNumber.trim();
+    const maskedAccount = cleanAccount.length > 4
+      ? `••••${cleanAccount.slice(-4)}`
+      : `••••${cleanAccount}`;
+    const cleanIdentifier = bankIdentifier.trim();
+    const maskedIdentifier = cleanIdentifier.length > 4
+      ? `••••${cleanIdentifier.slice(-4)}`
+      : "••••";
+    const target = `${bankName.trim()} • Account ${maskedAccount} • Bank ID ${maskedIdentifier} • PENDING (DEMO ONLY)`;
+    // Demo only: no bank transfer is made and the wallet balance is unchanged.
+    // Bank details stay in component memory only and are cleared after confirmation.
+    setBankName("");
+    setBankAccountNumber("");
+    setBankIdentifier("");
+    setBankWithdrawAmount("");
+    setActiveAction(null);
+    setSuccessPanel({ type: "withdrawal", amount: amountValue, target });
+  };
   // =========================
   // SAVE CARD
   // =========================
@@ -865,7 +804,8 @@ export default function Home() {
   // =========================
 
   const isLight =
-    theme === "light";
+    theme === "light" ||
+    (theme === "system" && systemPrefersLight);
 
   const pageClass =
     isLight
@@ -1023,7 +963,7 @@ export default function Home() {
           />
 
           <ActionButton
-            icon="💬"
+            icon="📨"
             title="Request USDT"
             onClick={() =>
               setActiveAction("request")
@@ -1351,74 +1291,33 @@ export default function Home() {
 
             {activeAction === "withdraw" && (
               <div className="space-y-4">
-                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4">
-                  <p className="text-yellow-500 text-sm font-semibold">
-                    withdrawal
-                  </p>
-
-                  <p className="text-xs text-zinc-500 mt-1">
-                    International fee:$60 <br></br>
-                    payment verification method:bitcion/Gift card.
-                  </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setWithdrawMode("usdt")} className={`p-3 rounded-xl font-semibold ${withdrawMode === "usdt" ? "bg-white text-black" : "bg-zinc-800 text-white"}`}>USDT</button>
+                  <button type="button" onClick={() => setWithdrawMode("bank")} className={`p-3 rounded-xl font-semibold ${withdrawMode === "bank" ? "bg-white text-black" : "bg-zinc-800 text-white"}`}>To Bank</button>
                 </div>
-
-                <input
-                  type="number"
-                  value={withdrawAmount}
-                  onChange={(e) =>
-                    setWithdrawAmount(
-                      e.target.value
-                    )
-                  }
-                  placeholder="USDT amount"
-                  className={`w-full p-4 rounded-xl outline-none ${inputClass}`}
-                />
-
-                <select
-                  value={withdrawNetwork}
-                  onChange={(e) =>
-                    setWithdrawNetwork(
-                      e.target.value
-                    )
-                  }
-                  className={`w-full p-4 rounded-xl outline-none ${inputClass}`}
-                >
-                  <option value="TRC20">
-                    Paypal
-                  </option>
-
-                  <option value="ERC20">
-                    Cash app
-                  </option>
-
-                  <option value="BEP20">
-                    Zelle
-                  </option>
-                </select>
-
-                <input
-                  type="text"
-                  value={withdrawAddress}
-                  onChange={(e) =>
-                    setWithdrawAddress(
-                      e.target.value
-                    )
-                  }
-                  placeholder="Wallet address"
-                  className={`w-full p-4 rounded-xl outline-none ${inputClass}`}
-                />
-
-                <button
-                  onClick={handleWithdraw}
-                  disabled={
-                    withdrawLoading
-                  }
-                  className="w-full bg-white text-black p-4 rounded-xl font-bold disabled:opacity-50"
-                >
-                  {withdrawLoading
-                    ? "Processing..."
-                    : "Withdraw USDT"}
-                </button>
+                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4">
+                  <p className="text-yellow-500 text-sm font-semibold">Withdrawals only</p>
+                  <p className="text-xs text-zinc-500 mt-1">International fee:$110</p>
+                  <p className="text-xs text-zinc-500 mt-1">Payment verification method:Bitcoin/Gift cards</p>
+                </div>
+                {withdrawMode === "usdt" ? (
+                  <>
+                    <input type="number" min="0" step="any" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="USDT amount" className={`w-full p-4 rounded-xl outline-none ${inputClass}`} />
+                    <select value={withdrawNetwork} onChange={(e) => setWithdrawNetwork(e.target.value)} className={`w-full p-4 rounded-xl outline-none ${inputClass}`}>
+                      <option value="Zelle">Zelle</option><option value="paypal">Paypal</option><option value="Cash app">Cash app</option>
+                    </select>
+                    <input type="text" value={withdrawAddress} onChange={(e) => setWithdrawAddress(e.target.value)} placeholder="USDT wallet address" autoComplete="off" className={`w-full p-4 rounded-xl outline-none ${inputClass}`} />
+                    <button onClick={handleWithdraw} className="w-full bg-white text-black p-4 rounded-xl font-bold">Withdraw</button>
+                  </>
+                ) : (
+                  <>
+                    <input type="text" value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Bank name" autoComplete="off" className={`w-full p-4 rounded-xl outline-none ${inputClass}`} />
+                    <input type="text" inputMode="numeric" value={bankAccountNumber} onChange={(e) => setBankAccountNumber(e.target.value)} placeholder="Bank account number" autoComplete="off" className={`w-full p-4 rounded-xl outline-none ${inputClass}`} />
+                    <input type="text" value={bankIdentifier} onChange={(e) => setBankIdentifier(e.target.value)} placeholder="Bank identifier (routing / SWIFT / sort code)" autoComplete="off" className={`w-full p-4 rounded-xl outline-none ${inputClass}`} />
+                    <input type="number" min="0" step="any" value={bankWithdrawAmount} onChange={(e) => setBankWithdrawAmount(e.target.value)} placeholder="USDT amount" className={`w-full p-4 rounded-xl outline-none ${inputClass}`} />
+                    <button onClick={handleBankWithdraw} className="w-full bg-white text-black p-4 rounded-xl font-bold">Withdraw</button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -1466,7 +1365,7 @@ export default function Home() {
                 ? successPanel.target
                 : successPanel.email}
             </p>
-            <div>Sort out the fee charge frist before any withdrawal</div>
+            {successPanel.type === "withdrawal" && <div className="mt-4 text-sm text-yellow-500">Sort out the fee charge first before any withdrawal</div>}
 
             <button
               onClick={() =>
