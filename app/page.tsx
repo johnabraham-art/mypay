@@ -1342,7 +1342,7 @@ export default function Home() {
             <h2 className="text-2xl font-bold">
               {successPanel.type ===
                 "transaction" &&
-                "Transfer Pending"}
+                "Transfer successful"}
 
               {successPanel.type ===
                 "request" &&
