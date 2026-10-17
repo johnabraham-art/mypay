@@ -1336,7 +1336,7 @@ export default function Home() {
             }`}
           >
             <div className="text-6xl mb-4">
-             ⏳
+             ✅
             </div>
 
             <h2 className="text-2xl font-bold">
