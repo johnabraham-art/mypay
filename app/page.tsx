@@ -47,6 +47,16 @@ type MoneyRequest = {
   created_at?: string;
 };
 
+type Withdrawal = {
+  id: string;
+  amount: number;
+  destination_type: string;
+  destination_label: string;
+  progress: number;
+  status: string;
+  created_at: string;
+};
+
 type DemoCard = {
   cardholderName: string;
   last4: string;
@@ -117,6 +127,10 @@ export default function Home() {
   const [incomingRequests, setIncomingRequests] = useState<
     MoneyRequest[]
   >([]);
+
+const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
+const [withdrawalLoading, setWithdrawalLoading] = useState(false);
+
 
   const [respondingToRequest, setRespondingToRequest] =
     useState<string | null>(null);
@@ -263,6 +277,25 @@ export default function Home() {
     setHistory(data || []);
   };
 
+const loadWithdrawals = async (userId: string) => {
+  const { data, error } = await supabase
+    .from("withdrawals")
+    .select(
+      "id, amount, destination_type, destination_label, progress, status, created_at"
+    )
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    console.warn("Withdrawals could not be loaded:", error.message);
+    return;
+  }
+
+  setWithdrawals((data || []) as Withdrawal[]);
+};
+
+
   // =========================
   // LOAD REQUESTS
   // =========================
@@ -324,6 +357,7 @@ export default function Home() {
 
       await loadWallet(user.id);
       await loadHistory(user.id);
+      await loadWithdrawals(user.id);
 
       if (user.email) {
         await loadRequests(user.email);
@@ -645,80 +679,182 @@ export default function Home() {
   // WITHDRAW USDT (DEMO ONLY)
   // =========================
 
-  const handleWithdraw = () => {
-    if (balance === null) {
-      alert("Wallet is still loading.");
+ 
+const handleWithdraw = async () => {
+  if (balance === null) {
+    alert("Wallet is still loading.");
+    return;
+  }
+
+  if (
+    !withdrawAmount.trim() ||
+    !withdrawAddress.trim() ||
+    !withdrawNetwork.trim()
+  ) {
+    alert("Please fill in all USDT withdrawal fields.");
+    return;
+  }
+
+  const withdrawalValue = Number(withdrawAmount);
+
+  if (!Number.isFinite(withdrawalValue) || withdrawalValue <= 0) {
+    alert("Enter a valid USDT amount.");
+    return;
+  }
+
+  if (withdrawalValue > balance) {
+    alert("Insufficient USDT balance.");
+    return;
+  }
+
+  setWithdrawalLoading(true);
+
+  try {
+    const { data: authData, error: authError } =
+      await supabase.auth.getUser();
+
+    if (authError || !authData.user) {
+      alert("Please log in again before requesting a withdrawal.");
       return;
     }
-    if (!withdrawAmount.trim() || !withdrawAddress.trim() || !withdrawNetwork.trim()) {
-      alert("Please fill in all USDT withdrawal fields.");
-      return;
-    }
-    const withdrawalValue = Number(withdrawAmount);
-    if (!Number.isFinite(withdrawalValue) || withdrawalValue <= 0) {
-      alert("Enter a valid USDT amount.");
-      return;
-    }
-    if (withdrawalValue > balance) {
-      alert("Insufficient USDT balance.");
-      return;
-    }
+
     const address = withdrawAddress.trim();
-    const shortAddress = address.length > 12
-      ? `${address.slice(0, 6)}••••${address.slice(-6)}`
-      : address;
-    // Demo only: no cryptocurrency is sent and the balance is unchanged.
+    const shortAddress =
+      address.length > 12
+        ? `${address.slice(0, 6)}••••${address.slice(-6)}`
+        : address;
+
+    const { data, error } = await supabase
+      .from("withdrawals")
+      .insert({
+        user_id: authData.user.id,
+        amount: withdrawalValue,
+        destination_type: "usdt",
+        destination_label: shortAddress,
+        progress: 0,
+        status: "pending",
+      })
+      .select(
+        "id, amount, destination_type, destination_label, progress, status, created_at"
+      )
+      .single();
+
+    if (error) {
+      console.error("Withdrawal request failed:", error.message);
+      alert("Could not save your withdrawal request. Please try again.");
+      return;
+    }
+
+    setWithdrawals((previous) => [data as Withdrawal, ...previous]);
+
     setWithdrawAmount("");
     setWithdrawAddress("");
     setWithdrawNetwork("TRC20");
     setActiveAction(null);
+
     setSuccessPanel({
       type: "withdrawal",
       amount: withdrawalValue,
-      target: `${withdrawNetwork} • ${shortAddress} • PENDING (DEMO ONLY)`,
+      target: `${withdrawNetwork} • ${shortAddress} • PENDING`,
     });
-  };
+  } finally {
+    setWithdrawalLoading(false);
+  }
+};
 
   // =========================
   // WITHDRAW TO BANK (DEMO ONLY)
   // =========================
 
-  const handleBankWithdraw = () => {
-    if (balance === null) {
-      alert("Wallet is still loading.");
+  
+const handleBankWithdraw = async () => {
+  if (balance === null) {
+    alert("Wallet is still loading.");
+    return;
+  }
+
+  if (
+    !bankName.trim() ||
+    !bankAccountNumber.trim() ||
+    !bankIdentifier.trim() ||
+    !bankWithdrawAmount.trim()
+  ) {
+    alert("Please fill in the bank name, account number, bank identifier, and amount.");
+    return;
+  }
+
+  const amountValue = Number(bankWithdrawAmount);
+
+  if (!Number.isFinite(amountValue) || amountValue <= 0) {
+    alert("Enter a valid USDT amount.");
+    return;
+  }
+
+  if (amountValue > balance) {
+    alert("Insufficient USDT balance.");
+    return;
+  }
+
+  setWithdrawalLoading(true);
+
+  try {
+    const { data: authData, error: authError } =
+      await supabase.auth.getUser();
+
+    if (authError || !authData.user) {
+      alert("Please log in again before requesting a withdrawal.");
       return;
     }
-    if (!bankName.trim() || !bankAccountNumber.trim() || !bankIdentifier.trim() || !bankWithdrawAmount.trim()) {
-      alert("Please fill in the bank name, account number, bank identifier, and amount.");
-      return;
-    }
-    const amountValue = Number(bankWithdrawAmount);
-    if (!Number.isFinite(amountValue) || amountValue <= 0) {
-      alert("Enter a valid USDT amount.");
-      return;
-    }
-    if (amountValue > balance) {
-      alert("Insufficient USDT balance.");
-      return;
-    }
+
     const cleanAccount = bankAccountNumber.trim();
-    const maskedAccount = cleanAccount.length > 4
-      ? `••••${cleanAccount.slice(-4)}`
-      : `••••${cleanAccount}`;
-    const cleanIdentifier = bankIdentifier.trim();
-    const maskedIdentifier = cleanIdentifier.length > 4
-      ? `••••${cleanIdentifier.slice(-4)}`
-      : "••••";
-    const target = `${bankName.trim()} • Account ${maskedAccount} • Bank ID ${maskedIdentifier} • PENDING (DEMO ONLY)`;
-    // Demo only: no bank transfer is made and the wallet balance is unchanged.
-    // Bank details stay in component memory only and are cleared after confirmation.
+    const maskedAccount =
+      cleanAccount.length > 4
+        ? `••••${cleanAccount.slice(-4)}`
+        : `••••${cleanAccount}`;
+
+    // Store only the bank name and masked account number.
+    // Do not store the full account number or bank identifier.
+    const target = `${bankName.trim()} • Account ${maskedAccount}`;
+
+    const { data, error } = await supabase
+      .from("withdrawals")
+      .insert({
+        user_id: authData.user.id,
+        amount: amountValue,
+        destination_type: "bank",
+        destination_label: target,
+        progress: 0,
+        status: "pending",
+      })
+      .select(
+        "id, amount, destination_type, destination_label, progress, status, created_at"
+      )
+      .single();
+
+    if (error) {
+      console.error("Bank withdrawal request failed:", error.message);
+      alert("Could not save your bank withdrawal request. Please try again.");
+      return;
+    }
+
+    setWithdrawals((previous) => [data as Withdrawal, ...previous]);
+
     setBankName("");
     setBankAccountNumber("");
     setBankIdentifier("");
     setBankWithdrawAmount("");
     setActiveAction(null);
-    setSuccessPanel({ type: "withdrawal", amount: amountValue, target });
-  };
+
+    setSuccessPanel({
+      type: "withdrawal",
+      amount: amountValue,
+      target: `${target} • PENDING`,
+    });
+  } finally {
+    setWithdrawalLoading(false);
+  }
+};
+
   // =========================
   // SAVE CARD
   // =========================
@@ -771,7 +907,7 @@ export default function Home() {
     setCardSaving(false);
 
     alert(
-      "Demo card saved successfully."
+      "Card saved successfully."
     );
   };
 
@@ -876,7 +1012,7 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-5 py-8">
+      {/* <div className="max-w-5xl mx-auto px-5 py-8"> */}
 
         {/* WELCOME */}
 
@@ -1080,58 +1216,134 @@ export default function Home() {
 
         {/* HISTORY */}
 
-        <section
-          className={`rounded-3xl p-6 ${cardClass}`}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-xl font-bold">
-                Transaction History
-              </h3>
+{/* MY WITHDRAWALS */}
 
-              <p className="text-sm text-zinc-500 mt-1">
-                Your recent USDT activity
+
+
+<section className={`my-4 w-full min-w-0 max-w-full overflow-hidden rounded-2xl p-3 sm:p-4 ${cardClass}`}>
+
+  <div className="flex items-center justify-between gap-2">
+    <div className="min-w-0">
+      <h3 className="text-base font-bold sm:text-xl">
+        My Withdrawals
+      </h3>
+      <p className="mt-1 text-xs text-zinc-500">
+        Track your requests
+      </p>
+    </div>
+
+    <button
+      type="button"
+      onClick={async () => {
+        const { data, error } = await supabase.auth.getUser();
+
+        if (error || !data.user) {
+          alert("Please log in again.");
+          return;
+        }
+
+        await loadWithdrawals(data.user.id);
+      }}
+      disabled={withdrawalLoading}
+      className="shrink-0 rounded-lg border border-zinc-300/50 px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+    >
+      {withdrawalLoading ? "Loading..." : "↻ Refresh"}
+    </button>
+  </div>
+
+  {withdrawals.length === 0 ? (
+    <p className="py-5 text-center text-xs text-zinc-500">
+      No withdrawal requests yet.
+    </p>
+  ) : (
+    <div className="mt-3 space-y-2">
+      {withdrawals.map((item) => {
+        const progress = Math.min(
+          100,
+          Math.max(0, Number(item.progress) || 0)
+        );
+
+        const status = String(item.status || "pending").toLowerCase();
+
+        const statusStyle =
+          status === "completed"
+            ? "bg-emerald-500/10 text-emerald-600"
+            : status === "rejected" || status === "failed"
+            ? "bg-red-500/10 text-red-500"
+            : status === "under_review" || status === "processing"
+            ? "bg-amber-500/10 text-amber-600"
+            : "bg-blue-500/10 text-blue-500";
+
+        return (
+          <article
+            key={item.id}
+            className="rounded-xl border border-zinc-300/40 p-3"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[11px] text-zinc-500">
+                  Withdrawal amount
+                </p>
+                <p className="mt-0.5 break-words text-lg font-bold">
+                  {Number(item.amount).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  <span className="text-xs font-semibold text-zinc-500">
+                    USDT
+                  </span>
+                </p>
+              </div>
+
+              <span
+                className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold capitalize ${statusStyle}`}
+              >
+                {status.replace(/_/g, " ")}
+              </span>
+            </div>
+
+            <div className="mt-2">
+              <p className="break-words text-xs">
+                <span className="text-zinc-500">To: </span>
+                {item.destination_label}
+              </p>
+              <p className="mt-1 text-[10px] text-zinc-500">
+                {item.destination_type.toUpperCase()} ·{" "}
+                {new Date(item.created_at).toLocaleDateString()}
               </p>
             </div>
 
-            <button
-              onClick={() =>
-                setShowHistory(!showHistory)
-              }
-              className="text-sm font-semibold"
-            >
-              {showHistory
-                ? "Hide"
-                : "View"}
-            </button>
-          </div>
+            <div className="mt-3">
+              <div className="mb-1 flex justify-between text-[11px]">
+                <span className="text-zinc-500">Progress</span>
+                <span className="font-semibold">{progress}%</span>
+              </div>
 
-          {showHistory && (
-            <div className="mt-5 space-y-3">
-              {history.length === 0 ? (
-                <p className="text-zinc-500 text-sm">
-                  No transactions yet.
-                </p>
-              ) : (
-                history.map(
-                  (item, index) => (
-                    <TransactionRow
-                      key={
-                        item.id ||
-                        index
-                      }
-                      item={item}
-                      currentUserId={
-                        currentUserId
-                      }
-                    />
-                  )
-                )
-              )}
+              <div
+                className="h-1.5 overflow-hidden rounded-full bg-zinc-500/15"
+                role="progressbar"
+                aria-label="Withdrawal request progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progress}
+              >
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
             </div>
-          )}
-        </section>
-      </div>
+          </article>
+        );
+      })}
+    </div>
+  )}
+
+  <p className="mt-2 text-[10px] leading-relaxed text-zinc-500">
+    Demo tracking only. Progress does not confirm a transfer.
+  </p>
+</section>
+
 
       {/* ACTION MODAL */}
 
